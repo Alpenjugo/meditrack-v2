@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.2.1
+- Neue Vorlage: «Amoxicillin Sandoz Suspension 200 mg/4 ml» (50 mg/ml), wird bei bestehenden Installationen ergänzt.
+
 ## 1.2.0
 - Temperatur separat erfassen (°C, Messart, Zeitpunkt, Notiz); bearbeiten und löschen.
 - Letzte Temperatur auf der Übersicht; Messungen erscheinen im Verlauf.

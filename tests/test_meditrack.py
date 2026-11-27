@@ -214,7 +214,8 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(names["Nasivin Kinder Spray 0.025 %"]["favorite"], 1)
         self.assertEqual(names["Dafalgan Zäpfchen 150 mg"]["favorite"], 1)
         Store(path)  # idempotent
-        self.assertEqual(len(st.list_medications()), 4)  # Ibuprofen (umbenannt), Algifor, Dafalgan, Nasivin
+        # Ibuprofen (umbenannt), Algifor, Dafalgan, Nasivin, Amoxicillin Sandoz
+        self.assertEqual(len(st.list_medications()), 5)
         st.conn.close()
 
     def test_migration_from_seed_v2(self):
@@ -233,7 +234,8 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(names["Algifor Junior Suspension 100 mg/5 ml"]["favorite"], 1)
         self.assertEqual(names["Ibuprofen Suspension 20 mg/ml"]["favorite"], 0)
         self.assertNotIn("Algifor Junior Suspension 20 mg/ml", names)
-        self.assertEqual(len(names), 2)
+        self.assertIn("Amoxicillin Sandoz Suspension 200 mg/4 ml", names)  # v4
+        self.assertEqual(len(names), 3)
         st.conn.close()
 
     def test_temperatures(self):

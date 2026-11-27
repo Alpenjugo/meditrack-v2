@@ -16,7 +16,7 @@ Felder:
 """
 
 # Bei neuen/geänderten Vorlagen erhöhen; neue Einträge mit "added_in" markieren.
-SEED_VERSION = 3
+SEED_VERSION = 4
 
 CHECK = "Werte vor Gebrauch mit Packungsbeilage bzw. Kinderarzt abgleichen."
 
@@ -163,6 +163,15 @@ PRESET_MEDICATIONS = [
         "form": "Suspension", "route": "oral", "dose_unit": "ml",
         "mg_per_unit": 50, "min_interval_hours": 8, "max_doses_per_24h": 3,
         "notes": "Antibiotikum, rezeptpflichtig. Dosis, Intervall (oft 2–3× täglich) und Dauer exakt gemäss Rezept anpassen.",
+    },
+    {
+        "name": "Amoxicillin Sandoz Suspension 200 mg/4 ml",
+        "active_ingredient": "Amoxicillin",
+        "form": "Suspension", "route": "oral", "dose_unit": "ml",
+        "mg_per_unit": 50, "min_interval_hours": 8, "max_doses_per_24h": 3, "added_in": 4,
+        "notes": ("Antibiotikum, rezeptpflichtig. Granulat zur Zubereitung von 100 ml Suspension "
+                  "(200 mg/4 ml = 50 mg/ml). Vor Gebrauch schütteln. Dosis, Anzahl Gaben pro Tag "
+                  "und Dauer exakt gemäss Rezept; Kur nicht vorzeitig abbrechen."),
     },
     {
         "name": "Dexpanthenol Salbe (z. B. Bepanthen)",
