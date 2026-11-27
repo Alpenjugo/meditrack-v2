@@ -16,6 +16,7 @@
     <!-- Übersicht -->
     <section id="view-status" class="view active">
       <button id="btnAddDose" class="btn primary big">+ Gabe erfassen</button>
+      <div id="quickPicks" class="quick"></div>
       <div id="statusList" class="cards"></div>
       <p class="disclaimer">Hinweis: Sperrzeiten und Höchstmengen sind hinterlegte Richtwerte.
         Massgebend sind Packungsbeilage und ärztliche Verordnung.</p>
@@ -59,7 +60,8 @@
   <!-- Dialog: Gabe erfassen -->
   <dialog id="doseDialog">
     <form id="doseForm" method="dialog">
-      <h3>Gabe erfassen</h3>
+      <h3 id="doseDialogTitle">Gabe erfassen</h3>
+      <div id="doseQuick" class="quick"></div>
       <label>Medikament
         <input id="doseMedFilter" type="search" placeholder="Filtern…" autocomplete="off">
         <select id="doseMed" required size="6"></select>
@@ -76,6 +78,8 @@
       <label>Notiz <input id="doseNote" type="text" maxlength="500" placeholder="z. B. Fieber 39.2 °C"></label>
       <div id="doseWarnings" class="warnings" hidden></div>
       <div class="actions">
+        <button type="button" class="btn danger" id="doseDelete" hidden>Löschen</button>
+        <span class="spacer"></span>
         <button type="button" class="btn ghost" data-close>Abbrechen</button>
         <button type="submit" id="doseSubmit" class="btn primary">Speichern</button>
       </div>
@@ -133,6 +137,7 @@
           <label>Max. mg/kg pro Tag <input name="max_mg_per_kg_day" type="number" step="any" min="0"></label>
         </div>
       </fieldset>
+      <label class="check"><input type="checkbox" name="favorite"> ★ Favorit (Schnellauswahl)</label>
       <label>Notizen <textarea name="notes" rows="3" maxlength="2000"></textarea></label>
       <p class="muted small">Sperrzeit und Tageslimit gelten pro <b>Wirkstoff</b> – also über alle Produkte mit demselben Wirkstoff hinweg.</p>
       <div class="actions">

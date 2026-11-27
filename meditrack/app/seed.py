@@ -15,6 +15,9 @@ Felder:
   max_mg_per_kg_day   Tageshöchstdosis mg pro kg
 """
 
+# Bei neuen/geänderten Vorlagen erhöhen; neue Einträge mit "added_in" markieren.
+SEED_VERSION = 2
+
 CHECK = "Werte vor Gebrauch mit Packungsbeilage bzw. Kinderarzt abgleichen."
 
 PRESET_MEDICATIONS = [
@@ -45,12 +48,22 @@ PRESET_MEDICATIONS = [
         "notes": f"Zäpfchenstärke passend zum Gewicht wählen. {CHECK}",
     },
     {
-        "name": "Ibuprofen Suspension 20 mg/ml (z. B. Algifor Junior)",
+        "name": "Algifor Junior Suspension 20 mg/ml",
+        "favorite": True,
         "active_ingredient": "Ibuprofen",
         "form": "Suspension", "route": "oral", "dose_unit": "ml",
         "mg_per_unit": 20, "dose_mg_per_kg": 10, "max_single_mg": 400,
         "min_interval_hours": 6, "max_doses_per_24h": 3, "max_mg_per_kg_day": 30,
         "notes": f"Fieber/Schmerzen. Mit etwas Nahrung geben. Nicht bei Dehydratation. {CHECK}",
+    },
+    {
+        "name": "Dafalgan Zäpfchen 150 mg",
+        "active_ingredient": "Paracetamol",
+        "form": "Zäpfchen", "route": "rektal", "dose_unit": "Stück",
+        "mg_per_unit": 150, "default_dose": 1, "dose_mg_per_kg": 15,
+        "max_single_mg": 1000, "min_interval_hours": 6, "max_doses_per_24h": 4,
+        "max_mg_per_kg_day": 60, "favorite": True, "added_in": 2,
+        "notes": f"Zäpfchenstärke passend zum Gewicht wählen (150 mg ≈ ab 10 kg). {CHECK}",
     },
     {
         "name": "Ibuprofen Zäpfchen 125 mg",
@@ -83,6 +96,14 @@ PRESET_MEDICATIONS = [
         "form": "Nasenspray", "route": "nasal", "dose_unit": "Sprühstoss",
         "default_dose": 1, "min_interval_hours": 8, "max_doses_per_24h": 3,
         "notes": f"1 Sprühstoss pro Nasenloch. Max. 5–7 Tage am Stück. Altersfreigabe beachten. {CHECK}",
+    },
+    {
+        "name": "Nasivin Kinder Spray 0.025 %",
+        "active_ingredient": "Oxymetazolin",
+        "form": "Nasenspray", "route": "nasal", "dose_unit": "Sprühstoss",
+        "default_dose": 1, "min_interval_hours": 8, "max_doses_per_24h": 3,
+        "favorite": True, "added_in": 2,
+        "notes": f"1 Sprühstoss pro Nasenloch, 2–3× täglich. Max. 5–7 Tage am Stück. Altersfreigabe beachten. {CHECK}",
     },
     {
         "name": "Meerwasser-/Kochsalz-Nasenspray",
@@ -143,3 +164,7 @@ PRESET_MEDICATIONS = [
         "notes": "Wundschutz, bei Bedarf.",
     },
 ]
+
+# Favoriten, die bei bestehenden Installationen (Seed-Version 1) gesetzt werden
+FAVORITES_V2 = ["Dafalgan Zäpfchen 150 mg", "Nasivin Kinder Spray 0.025 %"]
+LEGACY_FAVORITES = ["Ibuprofen Suspension 20 mg/ml (z. B. Algifor Junior)"]

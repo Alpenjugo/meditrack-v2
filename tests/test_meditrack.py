@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "meditrack", "a
 from core import Store, ValidationError, ceil_to_minutes, compute_status, suggested_dose, to_iso, utcnow  # noqa: E402
 from ha import slugify  # noqa: E402
 from seed import PRESET_MEDICATIONS  # noqa: E402
+import core  # noqa: E402
 import server  # noqa: E402
 
 
@@ -29,7 +30,7 @@ class StoreTests(unittest.TestCase):
         self.child = self.store.create_child({"name": "Lena", "weight_kg": 12})
         self.para_syrup = med_by(self.store, "Paracetamol Sirup")
         self.para_supp = med_by(self.store, "Paracetamol Zäpfchen 125")
-        self.ibu = med_by(self.store, "Ibuprofen Suspension")
+        self.ibu = med_by(self.store, "Algifor Junior")
 
     def tearDown(self):
         self.store.conn.close()
@@ -150,6 +151,69 @@ class StoreTests(unittest.TestCase):
         self.assertNotIn(self.ibu["id"], [m["id"] for m in self.store.list_medications()])
         self.assertEqual(len(self.store.list_doses(self.child["id"])), 1)
 
+    def test_update_dose_excludes_itself_and_checks_others(self):
+        id1, _ = self.dose(self.para_syrup, 6, hours_ago=8)
+        # Menge/Zeit der einzigen Gabe ändern -> darf nicht gegen sich selbst warnen
+        ok, w = self.store.update_dose(id1, {
+            "medication_id": self.para_syrup["id"], "amount": 5.5,
+            "given_at": to_iso(utcnow() - timedelta(hours=7)), "note": "korrigiert"})
+        self.assertTrue(ok)
+        self.assertEqual(w, [])
+        d = self.store.get_dose(id1)
+        self.assertEqual((d["amount"], d["note"], d["mg"]), (5.5, "korrigiert", 165))
+        # zweite Gabe so verschieben, dass sie zu nah an der ersten liegt -> Warnung
+        id2, _ = self.dose(self.para_syrup, 6, hours_ago=0)
+        res = self.store.update_dose(id2, {
+            "medication_id": self.para_syrup["id"], "amount": 6,
+            "given_at": to_iso(utcnow() - timedelta(hours=5))})
+        self.assertEqual(res[0], False)
+        self.assertIn("interval", [x["code"] for x in res[1]])
+        self.assertTrue(self.store.update_dose(id2, {
+            "medication_id": self.para_syrup["id"], "amount": 6,
+            "given_at": to_iso(utcnow() - timedelta(hours=5))}, force=True)[0])
+        # Medikament wechseln
+        ok, _ = self.store.update_dose(id2, {"medication_id": self.ibu["id"], "amount": 6,
+                                             "given_at": to_iso(utcnow() - timedelta(hours=5))})
+        self.assertTrue(ok)
+        self.assertEqual(self.store.get_dose(id2)["medication_id"], self.ibu["id"])
+        self.assertIsNone(self.store.update_dose(9999, {}))
+
+    def test_favorites_and_recent(self):
+        favs = {m["name"] for m in self.store.list_medications() if m["favorite"]}
+        self.assertEqual(favs, {"Algifor Junior Suspension 20 mg/ml", "Dafalgan Zäpfchen 150 mg",
+                                "Nasivin Kinder Spray 0.025 %"})
+        self.assertTrue(self.store.list_medications()[0]["favorite"])  # Favoriten zuerst
+        meds = self.store.list_medications()
+        for i, m in enumerate(meds[:7]):
+            self.store.add_dose({"child_id": self.child["id"], "medication_id": m["id"], "amount": 1,
+                                 "given_at": to_iso(utcnow() - timedelta(hours=50 - i))}, force=True)
+        recent = self.store.recent_medications(self.child["id"])
+        self.assertEqual(len(recent), 5)
+        self.assertEqual(recent[0]["id"], meds[6]["id"])  # neueste zuerst
+        # Favorit per Update entfernen
+        m = dict(meds[0]); m["favorite"] = False
+        self.assertEqual(self.store.update_medication(m["id"], m)["favorite"], 0)
+
+    def test_migration_from_seed_v1(self):
+        import sqlite3
+        path = os.path.join(self.tmp.name, "old.db")
+        conn = sqlite3.connect(path)
+        old_schema = core.SCHEMA.replace("    favorite INTEGER NOT NULL DEFAULT 0,\n", "")
+        conn.executescript(old_schema)
+        conn.execute("INSERT INTO medications(name, active_ingredient, dose_unit, min_interval_hours, is_preset) "
+                     "VALUES('Ibuprofen Suspension 20 mg/ml (z. B. Algifor Junior)', 'Ibuprofen', 'ml', 6, 1)")
+        conn.execute("INSERT INTO meta(key, value) VALUES('seeded', '1')")
+        conn.commit(); conn.close()
+        st = Store(path)
+        names = {m["name"]: m for m in st.list_medications()}
+        self.assertEqual(names["Ibuprofen Suspension 20 mg/ml (z. B. Algifor Junior)"]["favorite"], 1)
+        self.assertEqual(names["Nasivin Kinder Spray 0.025 %"]["favorite"], 1)
+        self.assertEqual(names["Dafalgan Zäpfchen 150 mg"]["favorite"], 1)
+        self.assertNotIn("Algifor Junior Suspension 20 mg/ml", names)  # alte Vorlagen nicht doppelt
+        Store(path)  # idempotent
+        self.assertEqual(len(st.list_medications()), 3)
+        st.conn.close()
+
     def test_slugify(self):
         self.assertEqual(slugify("Jürg Müller"), "juerg_mueller")
         self.assertEqual(slugify("Colecalciferol (Vitamin D3)"), "colecalciferol_vitamin_d3")
@@ -193,7 +257,7 @@ class HttpTests(unittest.TestCase):
         status, child = self.req("POST", "api/children", {"name": "Tim", "weight_kg": 15})
         self.assertEqual(status, 201)
         status, meds = self.req("GET", "api/medications")
-        para = next(m for m in meds if m["active_ingredient"] == "Paracetamol")
+        para = next(m for m in meds if m["name"].startswith("Paracetamol Sirup"))
         status, sug = self.req("GET", f"api/suggestion?child_id={child['id']}&medication_id={para['id']}")
         self.assertEqual(sug["suggestion"]["mg"], 225)
 
@@ -208,6 +272,13 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(st["ingredients"][0]["doses_24h"], 2)
         status, doses = self.req("GET", f"api/doses?child_id={child['id']}")
         self.assertEqual(len(doses), 2)
+        status, res = self.req("PUT", f"api/doses/{doses[0]['id']}",
+                               {"medication_id": para["id"], "amount": 7, "note": "edit",
+                                "given_at": doses[0]["given_at"], "force": True})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.req("PUT", "api/doses/99999", {"medication_id": para["id"], "amount": 1})[0], 404)
+        status, recent = self.req("GET", f"api/recent?child_id={child['id']}")
+        self.assertEqual(recent[0]["id"], para["id"])
         self.assertEqual(self.req("DELETE", f"api/doses/{doses[0]['id']}")[0], 204)
 
         status, err = self.req("POST", "api/children", {"name": ""})

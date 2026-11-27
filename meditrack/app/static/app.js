@@ -9,6 +9,9 @@ const state = {
   view: "status",
   editingMedId: null,
   editingChildId: null,
+  editingDose: null,
+  recent: [],
+  history: [],
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -181,12 +184,45 @@ async function deleteChild() {
 async function loadStatus() {
   if (!state.childId) { state.status = null; renderStatus(); return; }
   try {
-    state.status = await api(`status?child_id=${state.childId}`);
-  } catch (e) { toast(e.message); state.status = null; }
+    [state.status, state.recent] = await Promise.all([
+      api(`status?child_id=${state.childId}`), api(`recent?child_id=${state.childId}&limit=15`)]);
+  } catch (e) { toast(e.message); state.status = null; state.recent = []; }
   renderStatus();
 }
 
+/* ---------- Schnellauswahl (Favoriten + zuletzt verwendet) ---------- */
+function shortName(name) { return name.replace(/\s*\(z\. B\. [^)]*\)/, ""); }
+
+function quickMeds() {
+  const favs = state.meds.filter((m) => m.favorite);
+  const favIds = new Set(favs.map((m) => m.id));
+  const recent = state.recent
+    .map((r) => state.meds.find((m) => m.id === r.id))
+    .filter((m) => m && !favIds.has(m.id))
+    .slice(0, 5);
+  return { favs, recent };
+}
+
+function chipHtml(m, selectedId) {
+  const st = statusFor(m);
+  const blocked = st && !st.allowed_now;
+  const sub = blocked ? `⏳ ab ${fmtTime(st.next_allowed_at)}` : esc(m.active_ingredient);
+  return `<button type="button" class="chip ${m.favorite ? "fav" : ""} ${blocked ? "blocked" : ""} ${m.id === selectedId ? "selected" : ""}" data-med="${m.id}">
+    ${m.favorite ? '<span class="fav-star">★</span> ' : ""}${esc(shortName(m.name))}<small>${sub}</small></button>`;
+}
+
+function renderQuick(el, onPick, selectedId = null) {
+  if (!state.childId) { el.innerHTML = ""; return; }
+  const { favs, recent } = quickMeds();
+  let html = "";
+  if (favs.length) html += `<div class="qlabel">Favoriten</div><div class="chips">${favs.map((m) => chipHtml(m, selectedId)).join("")}</div>`;
+  if (recent.length) html += `<div class="qlabel">Zuletzt verwendet</div><div class="chips">${recent.map((m) => chipHtml(m, selectedId)).join("")}</div>`;
+  el.innerHTML = html;
+  el.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => onPick(Number(c.dataset.med))));
+}
+
 function renderStatus() {
+  renderQuick($("#quickPicks"), (id) => openDoseDialog(id));
   const el = $("#statusList");
   $("#btnAddDose").disabled = !state.childId;
   if (!state.childId) {
@@ -237,6 +273,7 @@ async function loadHistory() {
   if (!state.childId) { el.innerHTML = `<div class="empty">Kein Kind ausgewählt.</div>`; return; }
   let doses;
   try { doses = await api(`doses?child_id=${state.childId}&limit=300`); } catch (e) { toast(e.message); return; }
+  state.history = doses;
   if (!doses.length) { el.innerHTML = `<div class="empty">Noch keine Gaben erfasst.</div>`; return; }
   let html = "", lastDay = "";
   for (const d of doses) {
@@ -244,19 +281,18 @@ async function loadHistory() {
     const day = dt.toLocaleDateString("de-CH", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
     if (day !== lastDay) { html += `<div class="day">${esc(day)}</div>`; lastDay = day; }
     html += `
-      <div class="item">
+      <div class="item clickable" data-id="${d.id}">
         <div>
           <div class="title">${dt.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })} · ${esc(d.medication_name)}</div>
           <div class="sub">${fmtNum(d.amount)} ${esc(d.unit)}${d.mg != null ? ` (${fmtNum(d.mg)} mg)` : ""} · ${esc(d.active_ingredient)} · ${esc(d.route || "")}${d.note ? " · " + esc(d.note) : ""}</div>
         </div>
-        <button class="btn small danger" data-del="${d.id}" title="Eintrag löschen">✕</button>
+        <span class="muted">Bearbeiten ›</span>
       </div>`;
   }
   el.innerHTML = html;
-  el.querySelectorAll("button[data-del]").forEach((b) => b.addEventListener("click", async () => {
-    if (!confirm("Diesen Eintrag löschen?")) return;
-    try { await api(`doses/${b.dataset.del}`, { method: "DELETE" }); loadHistory(); toast("Gelöscht"); }
-    catch (e) { toast(e.message); }
+  el.querySelectorAll(".item[data-id]").forEach((it) => it.addEventListener("click", () => {
+    const dose = state.history.find((x) => x.id === Number(it.dataset.id));
+    if (dose) openDoseDialog(dose.medication_id, dose);
   }));
 }
 
@@ -286,7 +322,7 @@ function renderMedList() {
   el.innerHTML = list.map((m) => `
     <div class="item clickable" data-id="${m.id}">
       <div>
-        <div class="title">${esc(m.name)}</div>
+        <div class="title">${m.favorite ? '<span class="fav-star">★</span> ' : ""}${esc(m.name)}</div>
         <div class="sub"><span class="tag">${esc(m.active_ingredient)}</span><span class="tag">${esc(m.form || "–")}</span><span class="tag">${esc(m.route || "–")}</span></div>
         <div class="sub">${esc(medSummary(m))}</div>
       </div>
@@ -305,6 +341,7 @@ function openMedDialog(id = null) {
   const m = id ? state.meds.find((x) => x.id === id) : null;
   $("#medDialogTitle").textContent = m ? "Medikament bearbeiten" : "Medikament hinzufügen";
   if (m) MED_FORM_FIELDS.forEach((k) => { f.elements[k].value = m[k] ?? ""; });
+  f.elements.favorite.checked = !!m?.favorite;
   $("#medDelete").hidden = !m;
   $("#medDialog").showModal();
 }
@@ -314,6 +351,7 @@ async function saveMed(ev) {
   const f = $("#medForm");
   const body = {};
   MED_FORM_FIELDS.forEach((k) => { body[k] = f.elements[k].value; });
+  body.favorite = f.elements.favorite.checked;
   try {
     if (state.editingMedId) await api(`medications/${state.editingMedId}`, { method: "PUT", body });
     else await api("medications", { method: "POST", body });
@@ -352,8 +390,9 @@ function statusFor(med) {
   return (state.status?.ingredients || []).find((s) => s.key === key);
 }
 
-async function onDoseMedChange() {
+async function onDoseMedChange(keepAmount = false) {
   resetDoseWarnings();
+  renderQuick($("#doseQuick"), pickDoseMed, Number($("#doseMed").value));
   const med = state.meds.find((m) => m.id === Number($("#doseMed").value));
   const info = $("#doseMedInfo");
   if (!med) { info.innerHTML = ""; $("#doseUnit").textContent = ""; return; }
@@ -365,7 +404,12 @@ async function onDoseMedChange() {
   try {
     const { suggestion } = await api(`suggestion?child_id=${state.childId}&medication_id=${med.id}`);
     if (suggestion) {
-      html += `<div class="hint">Vorschlag für ${fmtNum(child.weight_kg)} kg: ${fmtNum(suggestion.mg)} mg${suggestion.amount != null ? ` ≈ ${fmtNum(suggestion.amount)} ${esc(med.dose_unit)}` : ""}</div>`;
+      const divisible = ["ml", "Tropfen", "mg"].includes(med.dose_unit);
+      html += `<div class="hint">Vorschlag für ${fmtNum(child.weight_kg)} kg: ${fmtNum(suggestion.mg)} mg (${fmtNum(med.dose_mg_per_kg)} mg/kg)${divisible && suggestion.amount != null ? ` ≈ ${fmtNum(suggestion.amount)} ${esc(med.dose_unit)}` : ""}</div>`;
+      if (!divisible && med.mg_per_unit && med.default_dose) {
+        const mg = med.default_dose * med.mg_per_unit;
+        html += `<div class="muted">${fmtNum(med.default_dose)} ${esc(med.dose_unit)} = ${fmtNum(mg)} mg (${fmtNum(mg / child.weight_kg)} mg/kg)</div>`;
+      }
       if (suggestion.amount != null && ["ml", "Tropfen", "mg"].includes(med.dose_unit)) {
         amount = med.dose_unit === "Tropfen" ? Math.round(suggestion.amount) : Math.round(suggestion.amount * 10) / 10;
       }
@@ -374,12 +418,18 @@ async function onDoseMedChange() {
     }
   } catch (_) { /* Vorschlag optional */ }
   const st = statusFor(med);
-  if (st && !st.allowed_now) {
+  if (st && !st.allowed_now && !state.editingDose) {
     html += `<div style="color:var(--wait);font-weight:600">⏳ ${esc(st.ingredient)} erst wieder ab ${fmtTime(st.next_allowed_at)}</div>`;
   }
   if (med.notes) html += `<div class="muted small">${esc(med.notes)}</div>`;
   info.innerHTML = html;
-  $("#doseAmount").value = amount ?? "";
+  if (!keepAmount) $("#doseAmount").value = amount ?? "";
+}
+
+function pickDoseMed(id) {
+  $("#doseMedFilter").value = "";
+  fillDoseMedSelect(id);
+  onDoseMedChange();
 }
 
 function resetDoseWarnings() {
@@ -389,16 +439,41 @@ function resetDoseWarnings() {
   $("#doseSubmit").classList.remove("danger");
 }
 
-async function openDoseDialog(medId = null) {
+async function openDoseDialog(medId = null, dose = null) {
   if (!state.childId) return;
   if (!state.meds.length) await loadMeds();
+  state.editingDose = dose;
   $("#doseForm").reset();
   $("#doseMedFilter").value = "";
+  $("#doseDialogTitle").textContent = dose ? "Gabe bearbeiten" : "Gabe erfassen";
+  $("#doseDelete").hidden = !dose;
+  if (dose && !state.meds.some((m) => m.id === dose.medication_id)) {
+    // archiviertes Medikament: trotzdem auswählbar machen
+    const all = await api("medications?archived=1");
+    const med = all.find((m) => m.id === dose.medication_id);
+    if (med) state.meds.push(med);
+  }
   fillDoseMedSelect(medId);
-  $("#doseTime").value = toLocalInput(roundToQuarter(new Date()));
+  $("#doseTime").value = toLocalInput(dose ? new Date(dose.given_at) : roundToQuarter(new Date()));
   resetDoseWarnings();
   $("#doseDialog").showModal();
-  await onDoseMedChange();
+  await onDoseMedChange(!!dose);
+  if (dose) {
+    $("#doseAmount").value = dose.amount;
+    $("#doseNote").value = dose.note || "";
+  }
+}
+
+async function deleteDose() {
+  const d = state.editingDose;
+  if (!d || !confirm("Diese Gabe löschen?")) return;
+  try {
+    await api(`doses/${d.id}`, { method: "DELETE" });
+    $("#doseDialog").close();
+    toast("Gelöscht");
+    loadStatus();
+    if (state.view === "history") loadHistory();
+  } catch (e) { toast(e.message); }
 }
 
 async function saveDose(ev) {
@@ -416,9 +491,10 @@ async function saveDose(ev) {
     force: pendingForce,
   };
   try {
-    await api("doses", { method: "POST", body });
+    if (state.editingDose) await api(`doses/${state.editingDose.id}`, { method: "PUT", body });
+    else await api("doses", { method: "POST", body });
     $("#doseDialog").close();
-    toast("Gabe gespeichert");
+    toast(state.editingDose ? "Änderung gespeichert" : "Gabe gespeichert");
     loadStatus();
     if (state.view === "history") loadHistory();
   } catch (e) {
@@ -445,7 +521,8 @@ function bind() {
   $("#btnAddChild").addEventListener("click", () => openChildDialog());
   $("#medSearch").addEventListener("input", renderMedList);
   $("#doseMedFilter").addEventListener("input", () => { fillDoseMedSelect(Number($("#doseMed").value)); onDoseMedChange(); });
-  $("#doseMed").addEventListener("change", onDoseMedChange);
+  $("#doseMed").addEventListener("change", () => onDoseMedChange());
+  $("#doseDelete").addEventListener("click", deleteDose);
   ["#doseAmount", "#doseTime"].forEach((s) => $(s).addEventListener("input", resetDoseWarnings));
   $("#doseForm").addEventListener("submit", saveDose);
   $("#medForm").addEventListener("submit", saveMed);

@@ -6,12 +6,16 @@ Erfasse, wann du deinem Kind welches Medikament gegeben hast – mit Sperrzeit
 ## Bedienung
 1. **Kinder** → Kind mit Gewicht (und optional Geburtsdatum) erfassen.
 2. **Übersicht** → «+ Gabe erfassen»: Medikament wählen, Menge prüfen, speichern.
-   Zeitpunkt ist änderbar (Nachträge möglich).
+   Zeitpunkt ist änderbar (Nachträge möglich), vorausgefüllt auf die nächste Viertelstunde.
 3. Die Übersicht zeigt pro **Wirkstoff**, wann die letzte Gabe war und ab wann
    wieder gegeben werden darf. Dafalgan und Ben-u-ron zählen z. B. gemeinsam als Paracetamol.
 4. Wird zu früh oder zu viel erfasst, erscheint eine Warnung. Speichern ist nur
    mit «Trotzdem speichern» möglich (z. B. bei ärztlicher Anweisung).
-5. **Medikamente** → Vorlagen anpassen oder eigene hinzufügen.
+5. **Schnellauswahl**: Favoriten (★) und die 5 zuletzt verwendeten Medikamente
+   erscheinen als Knöpfe auf der Übersicht und im Erfassen-Dialog. Favorit setzen:
+   Medikamente → Medikament öffnen → «★ Favorit».
+6. **Verlauf** → Eintrag antippen, um eine Gabe zu bearbeiten oder zu löschen.
+7. **Medikamente** → Vorlagen anpassen oder eigene hinzufügen.
 
 ## Felder eines Medikaments
 | Feld | Bedeutung |

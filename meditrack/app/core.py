@@ -9,7 +9,7 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
 
-from seed import PRESET_MEDICATIONS
+from seed import FAVORITES_V2, LEGACY_FAVORITES, PRESET_MEDICATIONS, SEED_VERSION
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS children (
@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS medications (
     max_mg_per_kg_day REAL,
     notes TEXT,
     is_preset INTEGER NOT NULL DEFAULT 0,
+    favorite INTEGER NOT NULL DEFAULT 0,
     archived INTEGER NOT NULL DEFAULT 0
 );
 
@@ -62,7 +63,7 @@ CREATE TABLE IF NOT EXISTS meta (
 MED_FIELDS = [
     "name", "active_ingredient", "form", "route", "dose_unit", "mg_per_unit",
     "default_dose", "dose_mg_per_kg", "max_single_mg", "min_interval_hours",
-    "max_doses_per_24h", "max_mg_per_kg_day", "notes",
+    "max_doses_per_24h", "max_mg_per_kg_day", "notes", "favorite",
 ]
 CHILD_FIELDS = ["name", "birthdate", "weight_kg"]
 NUMERIC_MED_FIELDS = {
@@ -143,15 +144,37 @@ class Store:
 
     # ------------------------------------------------------------------ seed
     def _seed(self):
+        """Erstbefüllung bzw. Nachtragen neuer Vorlagen bei Updates.
+
+        Bestehende (ggf. vom Nutzer geänderte) Medikamente werden nie
+        überschrieben; neue Vorlagen werden nur ergänzt, wenn noch kein
+        Medikament gleichen Namens existiert.
+        """
         with self.lock, self.conn:
+            cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(medications)")}
+            if "favorite" not in cols:
+                self.conn.execute(
+                    "ALTER TABLE medications ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
             row = self.conn.execute(
+                "SELECT value FROM meta WHERE key='seed_version'").fetchone()
+            seeded = self.conn.execute(
                 "SELECT value FROM meta WHERE key='seeded'").fetchone()
-            if row:
+            version = int(row["value"]) if row else (1 if seeded else 0)
+            if version >= SEED_VERSION:
                 return
+            existing = {r["name"] for r in self.conn.execute("SELECT name FROM medications")}
             for med in PRESET_MEDICATIONS:
-                self._insert_med(med, is_preset=1)
+                if med.get("added_in", 1) > version and med["name"] not in existing:
+                    self._insert_med(med, is_preset=1)
+            if 0 < version < 2:
+                for name in FAVORITES_V2 + LEGACY_FAVORITES:
+                    self.conn.execute(
+                        "UPDATE medications SET favorite=1 WHERE name=?", (name,))
             self.conn.execute(
-                "INSERT INTO meta(key, value) VALUES('seeded', '1')")
+                "INSERT OR REPLACE INTO meta(key, value) VALUES('seed_version', ?)",
+                (str(SEED_VERSION),))
+            self.conn.execute(
+                "INSERT OR REPLACE INTO meta(key, value) VALUES('seeded', '1')")
 
     # ------------------------------------------------------------- children
     def list_children(self):
@@ -211,7 +234,7 @@ class Store:
         sql = "SELECT * FROM medications"
         if not include_archived:
             sql += " WHERE archived=0"
-        sql += " ORDER BY name COLLATE NOCASE"
+        sql += " ORDER BY favorite DESC, name COLLATE NOCASE"
         with self.lock:
             rows = self.conn.execute(sql).fetchall()
         return [dict(r) for r in rows]
@@ -230,6 +253,8 @@ class Store:
                 out[field] = _num(value, field)
             elif field == "max_doses_per_24h":
                 out[field] = _num(value, field, integer=True)
+            elif field == "favorite":
+                out[field] = 1 if value in (True, 1, "1", "true", "on") else 0
             elif field == "notes":
                 out[field] = _text(value, field, max_len=2000)
             else:
@@ -295,6 +320,23 @@ class Store:
             rows = self.conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
+    def get_dose(self, dose_id):
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT * FROM doses WHERE id=?", (dose_id,)).fetchone()
+        return dict(row) if row else None
+
+    def recent_medications(self, child_id, limit=5):
+        """Zuletzt verwendete Medikamente eines Kindes (neueste zuerst)."""
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT m.*, MAX(d.given_at) AS last_used FROM doses d "
+                "JOIN medications m ON m.id = d.medication_id "
+                "WHERE d.child_id=? AND m.archived=0 "
+                "GROUP BY m.id ORDER BY last_used DESC LIMIT ?",
+                (child_id, int(limit))).fetchall()
+        return [dict(r) for r in rows]
+
     def delete_dose(self, dose_id):
         with self.lock, self.conn:
             cur = self.conn.execute("DELETE FROM doses WHERE id=?", (dose_id,))
@@ -322,12 +364,30 @@ class Store:
         mg = amount * med["mg_per_unit"] if med.get("mg_per_unit") else None
         return child, med, amount, given_at, mg, note
 
-    def check_dose(self, data):
+    def check_dose(self, data, exclude_dose_id=None):
         """Liefert (Warnungen, bereinigte Daten) für eine geplante Gabe."""
         child, med, amount, given_at, mg, note = self._clean_dose(data)
-        warnings = evaluate_dose(
-            child, med, amount, mg, given_at, self._doses_for_window(child["id"], given_at))
+        window = [d for d in self._doses_for_window(child["id"], given_at)
+                  if d["dose_id"] != exclude_dose_id]
+        warnings = evaluate_dose(child, med, amount, mg, given_at, window)
         return warnings, (child, med, amount, given_at, mg, note)
+
+    def update_dose(self, dose_id, data, force=False):
+        """Ändert eine Gabe. Rückgabe: (ok, warnings); None, falls nicht gefunden."""
+        existing = self.get_dose(dose_id)
+        if not existing:
+            return None
+        data = {**data, "child_id": existing["child_id"]}
+        warnings, (child, med, amount, given_at, mg, note) = self.check_dose(
+            data, exclude_dose_id=dose_id)
+        if warnings and not force:
+            return False, warnings
+        with self.lock, self.conn:
+            self.conn.execute(
+                "UPDATE doses SET medication_id=?, given_at=?, amount=?, unit=?, "
+                "mg=?, note=? WHERE id=?",
+                (med["id"], to_iso(given_at), amount, med["dose_unit"], mg, note, dose_id))
+        return True, warnings
 
     def add_dose(self, data, force=False):
         warnings, (child, med, amount, given_at, mg, note) = self.check_dose(data)

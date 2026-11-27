@@ -2,7 +2,7 @@
 
 Medikamenten-Tracker für Kinder: Gaben erfassen, Sperrzeiten pro Wirkstoff,
 Tageslimits, gewichtsbasierter Dosisvorschlag, Medikamenten-Datenbank mit
-16 gängigen Kindermedikamenten (Schweiz). Erscheint als Seitenleisten-App
+18 gängigen Kindermedikamenten (Schweiz). Erscheint als Seitenleisten-App
 «Medikamente» in Home Assistant (auch in der Companion-App).
 
 ## Installation

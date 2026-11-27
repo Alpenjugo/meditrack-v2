@@ -154,3 +154,22 @@ nav.bottom button.active { color: var(--primary); }
   background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 10px; z-index: 20;
   max-width: calc(100vw - 32px);
 }
+
+.quick { margin: -4px 0 16px; }
+.quick:empty { display: none; }
+.quick .qlabel { font-size: .75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin: 6px 0 6px; }
+.quick .chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.chip {
+  border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: .85rem;
+  padding: 7px 10px; border-radius: 10px; cursor: pointer; text-align: left; line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.chip small { display: block; color: var(--muted); font-size: .75rem; margin-top: 2px; }
+.chip.fav { border-color: var(--primary); }
+.chip.blocked small { color: var(--wait); }
+.chip.selected { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+.chip.selected small { color: var(--primary-text); opacity: .85; }
+#doseQuick { margin: 0 0 8px; }
+label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: .95rem; }
+label.check input { width: auto; margin: 0; }
+.fav-star { color: var(--primary); }

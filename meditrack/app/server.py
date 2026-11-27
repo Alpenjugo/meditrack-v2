@@ -188,6 +188,16 @@ def make_handler(app: App):
                     else:
                         changed = True
                         result = (201, {"id": dose_id, "warnings": warnings})
+                elif method == "PUT" and rid:
+                    data = self._json_body()
+                    res_upd = store.update_dose(rid, data, force=bool(data.get("force")))
+                    if res_upd is None:
+                        result = (404, {"error": "Gabe nicht gefunden"})
+                    elif not res_upd[0]:
+                        result = (409, {"error": "Warnungen", "warnings": res_upd[1]})
+                    else:
+                        changed = True
+                        result = (200, {"id": rid, "warnings": res_upd[1]})
                 elif method == "DELETE" and rid:
                     changed = True
                     result = (204, None) if store.delete_dose(rid) else (404, {"error": "Gabe nicht gefunden"})
@@ -205,6 +215,11 @@ def make_handler(app: App):
                 if not child or not med:
                     return self._send(404, {"error": "Nicht gefunden"})
                 return self._send(200, {"suggestion": suggested_dose(child, med)})
+
+            elif res == "recent" and method == "GET":
+                return self._send(200, store.recent_medications(
+                    self._int(query.get("child_id")),
+                    limit=min(self._int(query.get("limit")) or 5, 20)))
 
             elif res == "status" and method == "GET":
                 status = store.status(self._int(query.get("child_id")))
