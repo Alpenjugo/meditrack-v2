@@ -33,5 +33,6 @@ docker build -t meditrack meditrack && docker run -p 8099:8099 -v $PWD/data:/dat
 - `meditrack/app/server.py` – HTTP/API (nur Python-Standardbibliothek)
 - `meditrack/app/ha.py` – optionale HA-Sensoren
 - `meditrack/app/static/` – Oberfläche (HTML/CSS/JS)
+- `dashboard/meditrack-card.js` – optionale Dashboardkarte (auch für Nicht-Admins)
 
 Details zur Bedienung: [meditrack/DOCS.md](meditrack/DOCS.md)

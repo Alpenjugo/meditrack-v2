@@ -53,6 +53,40 @@ automation:
           message: "Lena darf wieder Paracetamol bekommen."
 ```
 
+## Mehrere Benutzer & Dashboard
+Ab Version 1.3.1 können auch **normale Home-Assistant-Benutzer** (ohne Adminrechte)
+MediTrack verwenden – über die Seitenleiste «Medikamente». Nicht angemeldete Personen
+haben weiterhin keinen Zugriff: MediTrack ist nur über HA-Ingress erreichbar, es gibt
+keinen offenen Port, und HA prüft bei jeder Sitzung den angemeldeten Benutzer.
+
+Zugriff steuern: Einstellungen → Personen → Benutzer. Wer kein HA-Konto hat, sieht
+MediTrack nicht. Alle Benutzer mit Zugriff sehen dieselben Daten.
+
+**Im Dashboard einbetten:** Die HACS-Karte `addon-iframe-card` funktioniert nur für
+Administratoren, weil sie den Admin-Befehl `supervisor/api` verwendet (Fehler 401 bei
+normalen Benutzern). Stattdessen die mitgelieferte Karte `dashboard/meditrack-card.js`
+aus dem Repository verwenden:
+
+1. Datei nach `/config/www/meditrack-card.js` kopieren.
+2. Einstellungen → Dashboards → ⋮ → Ressourcen → «Ressource hinzufügen»:
+   URL `/local/meditrack-card.js`, Typ «JavaScript-Modul».
+3. Karte (YAML):
+   ```yaml
+   type: custom:meditrack-card
+   addon: 3aa2d0b6_meditrack   # Slug aus der Adresszeile der Seitenleisten-App
+   height: 80vh
+   ```
+
+Ohne zusätzliche Karte geht auch eine Schaltfläche, die die Seitenleisten-App öffnet:
+```yaml
+type: button
+name: Medikamente
+icon: mdi:pill
+tap_action:
+  action: navigate
+  navigation_path: /3aa2d0b6_meditrack
+```
+
 ## Daten & Datenschutz
 Alle Daten liegen lokal in `/data/meditrack.db` auf deinem Home-Assistant-Server
 und sind in HA-Backups enthalten. Zugriff nur über HA (Ingress). Export als JSON

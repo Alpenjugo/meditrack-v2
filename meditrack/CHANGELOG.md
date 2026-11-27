@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.1
+- Behoben: Normale Home-Assistant-Benutzer (ohne Adminrechte) erhielten «401 Unauthorized».
+  Das Add-on-Panel ist jetzt für alle angemeldeten Benutzer freigegeben (`panel_admin: false`).
+  Nicht angemeldete Zugriffe bleiben gesperrt (nur Ingress, kein offener Port).
+- Neu: Dashboardkarte `dashboard/meditrack-card.js`, die auch für Nicht-Admins funktioniert
+  (die HACS-Karte `addon-iframe-card` nutzt einen reinen Admin-Befehl).
+- Keine Änderungen an Daten, Design oder Funktionen.
+
 ## 1.3.0
 - Datum und Uhrzeit immer im Format TT.MM.JJJJ und 24 h – unabhängig von der Spracheinstellung des Handys.
   Eigene Zeitauswahl: «Jetzt», «−15 min», «−30 min», «−1 h», Tag (Heute/Gestern/…) und Uhrzeit HH:MM.
