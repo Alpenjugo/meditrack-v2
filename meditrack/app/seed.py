@@ -168,10 +168,13 @@ PRESET_MEDICATIONS = [
         "name": "Amoxicillin Sandoz Suspension 200 mg/4 ml",
         "active_ingredient": "Amoxicillin",
         "form": "Suspension", "route": "oral", "dose_unit": "ml",
-        "mg_per_unit": 50, "min_interval_hours": 8, "max_doses_per_24h": 3, "added_in": 4,
-        "notes": ("Antibiotikum, rezeptpflichtig. Granulat zur Zubereitung von 100 ml Suspension "
-                  "(200 mg/4 ml = 50 mg/ml). Vor Gebrauch schütteln. Dosis, Anzahl Gaben pro Tag "
-                  "und Dauer exakt gemäss Rezept; Kur nicht vorzeitig abbrechen."),
+        # 2× täglich (morgens/abends): 10 h Mindestabstand lässt Spielraum (z. B. 7:30 / 18:00);
+        # bewusst kein 24-h-Zähler, da sonst ein etwas früherer Morgen fälschlich warnt.
+        "mg_per_unit": 50, "min_interval_hours": 10, "added_in": 4,
+        "notes": ("Antibiotikum, rezeptpflichtig. Eingestellt auf 2× täglich (morgens und abends, "
+                  "mind. 10 h Abstand). Granulat zur Zubereitung von 100 ml Suspension "
+                  "(200 mg/4 ml = 50 mg/ml). Vor Gebrauch schütteln. Dosis und Dauer exakt gemäss "
+                  "Rezept; Kur nicht vorzeitig abbrechen, auch wenn es dem Kind besser geht."),
     },
     {
         "name": "Dexpanthenol Salbe (z. B. Bepanthen)",
