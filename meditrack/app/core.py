@@ -125,6 +125,8 @@ def _num(value, field, *, integer=False, allow_none=True):
         if allow_none:
             return None
         raise ValidationError(f"Feld '{field}' ist erforderlich")
+    if isinstance(value, str):
+        value = value.strip().replace(",", ".")
     try:
         number = int(value) if integer else float(value)
     except (TypeError, ValueError) as exc:

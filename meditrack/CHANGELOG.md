@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0
+- Datum und Uhrzeit immer im Format TT.MM.JJJJ und 24 h – unabhängig von der Spracheinstellung des Handys.
+  Eigene Zeitauswahl: «Jetzt», «−15 min», «−30 min», «−1 h», Tag (Heute/Gestern/…) und Uhrzeit HH:MM.
+- Smartphone-Bedienung: Dialoge als Bottom-Sheet mit fixer Speichern-Leiste, grössere Tippflächen,
+  Plus/Minus für Menge und Temperatur, Messart als Knöpfe, Medikamentenauswahl als Liste.
+- Komma oder Punkt als Dezimaltrennzeichen (38,5 oder 38.5).
+- Einheitliche Linien-Icons statt Emojis; doppelter App-Titel entfernt (HA zeigt ihn bereits).
+
 ## 1.2.2
 - Amoxicillin Sandoz: eingestellt auf 2× täglich (mind. 10 h Abstand, kein 24-h-Zähler).
   Bereits installierte Vorlage ggf. von Hand anpassen (eigene Werte werden nie überschrieben).

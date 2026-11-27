@@ -10,9 +10,11 @@ const state = {
   editingMedId: null,
   editingChildId: null,
   editingDose: null,
+  editingTemp: null,
+  doseMedId: null,
   recent: [],
   history: [],
-  editingTemp: null,
+  tempHistory: [],
   chartHours: 72,
   chart: null,
 };
@@ -22,6 +24,33 @@ const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmtNum = (n) => (n == null ? "" : Number(n).toLocaleString("de-CH", { maximumFractionDigits: 2 }));
+// Komma oder Punkt als Dezimaltrennzeichen akzeptieren
+const normNum = (s) => String(s ?? "").trim().replace(",", ".");
+
+/* ---------- Icons (Inline-SVG statt Emojis) ---------- */
+const ICON_PATHS = {
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  minus: '<path d="M5 12h14"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/>',
+  list: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  chart: '<path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/>',
+  pill: '<path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  thermo: '<path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/>',
+  star: '<path d="M12 2.8l2.8 5.8 6.4.9-4.6 4.5 1.1 6.3L12 17.3l-5.7 3 1.1-6.3-4.6-4.5 6.4-.9z"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
+  chevron: '<path d="m9 6 6 6-6 6"/>',
+  download: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
+};
+function icon(name, cls = "") {
+  return `<svg class="ico ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICON_PATHS[name] || ""}</svg>`;
+}
+function hydrateIcons(root = document) {
+  root.querySelectorAll("i[data-icon]").forEach((i) => { i.outerHTML = icon(i.dataset.icon); });
+}
+const star = () => `<span class="fav-star">${icon("star", "sm fill")}</span>`;
 
 async function api(path, options = {}) {
   const opts = { headers: { "Content-Type": "application/json" }, ...options };
@@ -46,28 +75,42 @@ function toast(msg) {
   toast._t = setTimeout(() => { t.hidden = true; }, 3500);
 }
 
-/* ---------- Zeitformatierung ---------- */
+/* ---------- Datum & Zeit (immer TT.MM.JJJJ, 24 h – unabhängig von der Geräte-Region) ---------- */
+const pad = (n) => String(n).padStart(2, "0");
+const WD_SHORT = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+const WD_LONG = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+const fmtDate = (d) => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
+const fmtDM = (d) => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.`;
+const fmtHM = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const isoDay = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
 function fmtTime(iso) {
   const d = new Date(iso);
-  const now = new Date();
-  const time = d.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
-  const sameDay = d.toDateString() === now.toDateString();
-  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
-  const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
-  if (sameDay) return `${time}`;
-  if (d.toDateString() === yesterday.toDateString()) return `gestern ${time}`;
-  if (d.toDateString() === tomorrow.toDateString()) return `morgen ${time}`;
-  return d.toLocaleString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const days = Math.round((startOfDay(d) - startOfDay(new Date())) / 86400000);
+  if (days === 0) return fmtHM(d);
+  if (days === -1) return `gestern ${fmtHM(d)}`;
+  if (days === 1) return `morgen ${fmtHM(d)}`;
+  return `${WD_SHORT[d.getDay()]} ${fmtDM(d)} ${fmtHM(d)}`;
 }
 function fmtDuration(ms) {
   const min = Math.max(0, Math.round(ms / 60000));
   const h = Math.floor(min / 60), m = min % 60;
   if (h >= 24) return `${Math.floor(h / 24)} T ${h % 24} h`;
-  return h ? `${h} h ${String(m).padStart(2, "0")} min` : `${m} min`;
+  return h ? `${h} h ${pad(m)} min` : `${m} min`;
 }
-function toLocalInput(date) {
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+function parseDate(s) {
+  const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(String(s || "").trim());
+  if (!m) return null;
+  const d = new Date(+m[3], +m[2] - 1, +m[1]);
+  return d.getDate() === +m[1] && d.getMonth() === +m[2] - 1 ? d : null;
+}
+function parseHM(s) {
+  const v = String(s || "").trim().replace(/[.,h\s]/g, ":");
+  const m = /^(\d{1,2}):(\d{1,2})$/.exec(v) || /^(\d{1,2})(\d{2})$/.exec(v) || /^(\d{1,2})()$/.exec(v);
+  if (!m) return null;
+  const h = +m[1], mi = +(m[2] || 0);
+  return h <= 23 && mi <= 59 ? { h, mi } : null;
 }
 function roundToQuarter(date) {
   // nächstgelegene Viertelstunde, aber nie in der Zukunft (Server lehnt > 5 min ab)
@@ -86,6 +129,77 @@ function ageText(birthdate) {
   return months < 24 ? `${months} Mt.` : `${Math.floor(months / 12)} J.`;
 }
 
+/* Datumsfeld TT.MM.JJJJ: Punkte werden beim Tippen automatisch gesetzt */
+function bindDateInput(input) {
+  input.addEventListener("input", () => {
+    let v = input.value.replace(/[^\d.]/g, "");
+    const parts = v.split(".");
+    const fits = parts.length <= 3 && parts.every((p, i) => p.length <= (i < 2 ? 2 : 4));
+    if (!fits) {
+      const d = v.replace(/\./g, "").slice(0, 8);
+      v = [d.slice(0, 2), d.slice(2, 4), d.slice(4)].filter(Boolean).join(".");
+    }
+    if (v !== input.value) input.value = v;
+  });
+}
+
+/* Zeitpunkt-Auswahl: Schnellknöpfe, Tag (Heute/Gestern/…) und Uhrzeit HH:MM */
+function buildWhen(el, { quarter }) {
+  el.innerHTML = `<label>Zeitpunkt</label>
+    <div class="seg">
+      <button type="button" data-q="now">Jetzt</button>
+      <button type="button" data-q="-15">−15 min</button>
+      <button type="button" data-q="-30">−30 min</button>
+      <button type="button" data-q="-60">−1 h</button>
+    </div>
+    <div class="when-row">
+      <select class="when-day" aria-label="Tag"></select>
+      <input class="when-time" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM" aria-label="Uhrzeit (HH:MM)" autocomplete="off">
+    </div>`;
+  const time = el.querySelector(".when-time");
+  const changed = () => el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () => {
+    const now = new Date();
+    if (b.dataset.q === "now") setWhen(el, quarter ? roundToQuarter(now) : now);
+    else {
+      let t = new Date((readWhen(el) || now).getTime() + Number(b.dataset.q) * 60000);
+      setWhen(el, t);
+    }
+    changed();
+  }));
+  time.addEventListener("input", () => {
+    const digits = time.value.replace(/\D/g, "");
+    if (!time.value.includes(":") && digits.length === 4) time.value = `${digits.slice(0, 2)}:${digits.slice(2)}`;
+  });
+  time.addEventListener("blur", () => {
+    const hm = parseHM(time.value);
+    if (hm) time.value = `${pad(hm.h)}:${pad(hm.mi)}`;
+  });
+}
+function fillDays(select, extra) {
+  const today = startOfDay(new Date());
+  const opts = [];
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(today); d.setDate(today.getDate() - i);
+    const label = i === 0 ? `Heute, ${fmtDM(d)}` : i === 1 ? `Gestern, ${fmtDM(d)}` : `${WD_SHORT[d.getDay()]} ${fmtDate(d)}`;
+    opts.push([isoDay(d), label]);
+  }
+  if (extra && !opts.some(([v]) => v === isoDay(extra))) opts.push([isoDay(extra), `${WD_SHORT[extra.getDay()]} ${fmtDate(extra)}`]);
+  select.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
+}
+function setWhen(el, date) {
+  const sel = el.querySelector(".when-day");
+  fillDays(sel, date);
+  sel.value = isoDay(date);
+  el.querySelector(".when-time").value = fmtHM(date);
+}
+function readWhen(el) {
+  const [y, mo, d] = el.querySelector(".when-day").value.split("-").map(Number);
+  const hm = parseHM(el.querySelector(".when-time").value);
+  if (!y || !hm) return null;
+  return new Date(y, mo - 1, d, hm.h, hm.mi);
+}
+
 /* ---------- Navigation ---------- */
 function showView(view) {
   state.view = view;
@@ -94,6 +208,7 @@ function showView(view) {
   if (view === "history") loadHistory();
   if (view === "status") loadStatus();
   if (view === "chart") loadChart();
+  window.scrollTo(0, 0);
   try { localStorage.setItem("meditrack.view", view); } catch (_) { /* ignorieren */ }
 }
 
@@ -142,12 +257,16 @@ function renderChildList() {
     el.innerHTML = `<div class="empty">Noch kein Kind erfasst.</div>`;
     return;
   }
-  el.innerHTML = state.children.map((c) => `
+  el.innerHTML = state.children.map((c) => {
+    const born = c.birthdate ? `geb. ${fmtDate(new Date(c.birthdate + "T00:00:00"))}` : "";
+    return `
     <div class="item clickable" data-id="${c.id}">
-      <div><div class="title">${esc(c.name)}</div>
-      <div class="sub">${[c.weight_kg ? fmtNum(c.weight_kg) + " kg" : "Gewicht fehlt", ageText(c.birthdate)].filter(Boolean).join(" · ")}</div></div>
-      <span class="muted">Bearbeiten ›</span>
-    </div>`).join("");
+      <div class="lead">${icon("user")}</div>
+      <div class="main"><div class="title">${esc(c.name)}</div>
+      <div class="sub">${[c.weight_kg ? fmtNum(c.weight_kg) + " kg" : "Gewicht fehlt", ageText(c.birthdate), born].filter(Boolean).join(" · ")}</div></div>
+      <span class="chev">${icon("chevron")}</span>
+    </div>`;
+  }).join("");
   el.querySelectorAll(".item").forEach((it) => it.addEventListener("click", () => openChildDialog(Number(it.dataset.id))));
 }
 
@@ -159,7 +278,7 @@ function openChildDialog(id = null) {
   $("#childDialogTitle").textContent = c ? "Kind bearbeiten" : "Kind hinzufügen";
   if (c) {
     f.name.value = c.name;
-    f.birthdate.value = c.birthdate || "";
+    f.birthdate.value = c.birthdate ? fmtDate(new Date(c.birthdate + "T00:00:00")) : "";
     f.weight_kg.value = c.weight_kg ?? "";
   }
   $("#childDelete").hidden = !c;
@@ -169,7 +288,13 @@ function openChildDialog(id = null) {
 async function saveChild(ev) {
   ev.preventDefault();
   const f = $("#childForm");
-  const body = { name: f.name.value, birthdate: f.birthdate.value, weight_kg: f.weight_kg.value };
+  let birthdate = "";
+  if (f.birthdate.value.trim()) {
+    const d = parseDate(f.birthdate.value);
+    if (!d) { toast("Geburtsdatum bitte als TT.MM.JJJJ eingeben"); return; }
+    birthdate = isoDay(d);
+  }
+  const body = { name: f.name.value, birthdate, weight_kg: normNum(f.weight_kg.value) };
   try {
     const saved = state.editingChildId
       ? await api(`children/${state.editingChildId}`, { method: "PUT", body })
@@ -219,9 +344,9 @@ function quickMeds() {
 function chipHtml(m, selectedId) {
   const st = statusFor(m);
   const blocked = st && !st.allowed_now;
-  const sub = blocked ? `⏳ ab ${fmtTime(st.next_allowed_at)}` : esc(m.active_ingredient);
+  const sub = blocked ? `${icon("clock", "sm")} ab ${fmtTime(st.next_allowed_at)}` : esc(m.active_ingredient);
   return `<button type="button" class="chip ${m.favorite ? "fav" : ""} ${blocked ? "blocked" : ""} ${m.id === selectedId ? "selected" : ""}" data-med="${m.id}">
-    ${m.favorite ? '<span class="fav-star">★</span> ' : ""}${esc(shortName(m.name))}<small>${sub}</small></button>`;
+    ${m.favorite ? star() + " " : ""}${esc(shortName(m.name))}<small>${sub}</small></button>`;
 }
 
 function renderQuick(el, onPick, selectedId = null) {
@@ -234,6 +359,19 @@ function renderQuick(el, onPick, selectedId = null) {
   el.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => onPick(Number(c.dataset.med))));
 }
 
+function renderLastTemp() {
+  const el = $("#lastTemp");
+  const t = state.status?.last_temperature;
+  if (!state.childId || !t) { el.innerHTML = ""; return; }
+  const age = Date.now() - new Date(t.measured_at).getTime();
+  el.innerHTML = `<button type="button" class="temp-line ${t.celsius >= FEVER ? "fever" : ""}">
+    ${icon("thermo")}
+    <span><span class="val">${fmtNum(t.celsius)} °C</span><br>
+    <span class="muted small">${fmtTime(t.measured_at)} · vor ${fmtDuration(age)}${t.method ? " · " + esc(t.method) : ""}</span></span>
+    <span class="chev">${icon("chevron")}</span></button>`;
+  el.firstElementChild.addEventListener("click", () => openTempDialog(t));
+}
+
 function renderStatus() {
   renderQuick($("#quickPicks"), (id) => openDoseDialog(id));
   const el = $("#statusList");
@@ -242,7 +380,7 @@ function renderStatus() {
   renderLastTemp();
   if (!state.childId) {
     el.innerHTML = `<div class="empty">Erfasse zuerst ein Kind.<br><br>
-      <button class="btn primary" id="emptyAddChild">+ Kind hinzufügen</button></div>`;
+      <button class="btn primary" id="emptyAddChild">${icon("plus")}Kind hinzufügen</button></div>`;
     $("#emptyAddChild").addEventListener("click", () => openChildDialog());
     return;
   }
@@ -270,7 +408,7 @@ function renderStatus() {
         <div class="big-time">${allowed
           ? "Wieder möglich"
           : `ab ${fmtTime(s.next_allowed_at)} <span class="muted small">(in ${fmtDuration(next - now)})</span>`}</div>
-        <div class="meta">Zuletzt: ${fmtTime(s.last_given_at)} (vor ${fmtDuration(now - last)}) · ${fmtNum(s.last_amount)} ${esc(s.last_unit)} ${esc(s.medication_name)}${reason}</div>
+        <div class="meta">Zuletzt ${fmtTime(s.last_given_at)} (vor ${fmtDuration(now - last)}) · ${fmtNum(s.last_amount)} ${esc(s.last_unit)} ${esc(shortName(s.medication_name))}${reason}</div>
         <div class="progress"><div style="width:${pct.toFixed(1)}%"></div></div>
         <div class="foot">
           <span class="meta">${dosesTxt}${mgTxt}</span>
@@ -280,17 +418,6 @@ function renderStatus() {
   }).join("");
   el.querySelectorAll("button[data-med]").forEach((b) =>
     b.addEventListener("click", () => openDoseDialog(Number(b.dataset.med))));
-}
-
-function renderLastTemp() {
-  const el = $("#lastTemp");
-  const t = state.status?.last_temperature;
-  if (!state.childId || !t) { el.innerHTML = ""; return; }
-  const age = Date.now() - new Date(t.measured_at).getTime();
-  el.innerHTML = `<div class="temp-line ${t.celsius >= FEVER ? "fever" : ""}">
-    🌡 <span class="val">${fmtNum(t.celsius)} °C</span>
-    <span class="muted small">${fmtTime(t.measured_at)} (vor ${fmtDuration(age)})${t.method ? " · " + esc(t.method) : ""}</span></div>`;
-  el.firstElementChild.addEventListener("click", () => openTempDialog(t));
 }
 
 /* ---------- Verlauf ---------- */
@@ -312,29 +439,30 @@ async function loadHistory() {
   let html = "", lastDay = "";
   for (const e of entries) {
     const dt = new Date(e.at);
-    const day = dt.toLocaleDateString("de-CH", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+    const day = `${WD_LONG[dt.getDay()]}, ${fmtDate(dt)}`;
     if (day !== lastDay) { html += `<div class="day">${esc(day)}</div>`; lastDay = day; }
-    const hm = dt.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
     if (e.kind === "temp") {
       const t = e.t;
       html += `
-      <div class="item clickable ${t.celsius >= FEVER ? "fever" : ""}" data-temp="${t.id}">
-        <div>
-          <div class="title">${hm} · 🌡 <span class="temp-val">${fmtNum(t.celsius)} °C</span></div>
+      <div class="item clickable temp ${t.celsius >= FEVER ? "fever" : ""}" data-temp="${t.id}">
+        <div class="lead">${icon("thermo")}</div>
+        <div class="main">
+          <div class="title"><span class="time">${fmtHM(dt)}</span> · <span class="temp-val">${fmtNum(t.celsius)} °C</span></div>
           <div class="sub">Temperatur${t.method ? " · " + esc(t.method) : ""}${t.note ? " · " + esc(t.note) : ""}</div>
         </div>
-        <span class="muted">Bearbeiten ›</span>
+        <span class="chev">${icon("chevron")}</span>
       </div>`;
       continue;
     }
     const d = e.d;
     html += `
       <div class="item clickable" data-id="${d.id}">
-        <div>
-          <div class="title">${hm} · ${esc(d.medication_name)}</div>
-          <div class="sub">${fmtNum(d.amount)} ${esc(d.unit)}${d.mg != null ? ` (${fmtNum(d.mg)} mg)` : ""} · ${esc(d.active_ingredient)} · ${esc(d.route || "")}${d.note ? " · " + esc(d.note) : ""}</div>
+        <div class="lead">${icon("pill")}</div>
+        <div class="main">
+          <div class="title"><span class="time">${fmtHM(dt)}</span> · ${esc(shortName(d.medication_name))}</div>
+          <div class="sub">${fmtNum(d.amount)} ${esc(d.unit)}${d.mg != null ? ` (${fmtNum(d.mg)} mg)` : ""} · ${esc(d.active_ingredient)}${d.note ? " · " + esc(d.note) : ""}</div>
         </div>
-        <span class="muted">Bearbeiten ›</span>
+        <span class="chev">${icon("chevron")}</span>
       </div>`;
   }
   el.innerHTML = html;
@@ -349,6 +477,11 @@ async function loadHistory() {
 }
 
 /* ---------- Temperatur ---------- */
+function setTempMethod(v) {
+  document.querySelectorAll("#tempMethod button").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
+}
+function getTempMethod() { return $("#tempMethod button.active")?.dataset.v || ""; }
+
 function openTempDialog(temp = null) {
   if (!state.childId) return;
   state.editingTemp = temp;
@@ -357,22 +490,29 @@ function openTempDialog(temp = null) {
   $("#tempDelete").hidden = !temp;
   let method = "";
   try { method = localStorage.getItem("meditrack.tempMethod") || ""; } catch (_) { /* ignorieren */ }
-  $("#tempValue").value = temp ? temp.celsius : "";
-  $("#tempMethod").value = temp ? (temp.method || "") : method;
+  $("#tempValue").value = temp ? fmtNum(temp.celsius) : "";
+  setTempMethod(temp ? (temp.method || "") : method);
   // Messungen minutengenau (nicht auf 15 min gerundet)
-  $("#tempTime").value = toLocalInput(temp ? new Date(temp.measured_at) : new Date());
+  setWhen($("#tempWhen"), temp ? new Date(temp.measured_at) : new Date());
   $("#tempNote").value = temp?.note || "";
   $("#tempDialog").showModal();
-  if (!temp) $("#tempValue").focus();
+}
+
+function stepTemp(delta) {
+  const cur = parseFloat(normNum($("#tempValue").value));
+  const base = isNaN(cur) ? 37.5 : cur;
+  const v = Math.min(43, Math.max(34, Math.round((base + (isNaN(cur) ? 0 : delta)) * 10) / 10));
+  $("#tempValue").value = v.toFixed(1);
 }
 
 async function saveTemp(ev) {
   ev.preventDefault();
-  const time = new Date($("#tempTime").value);
-  if (isNaN(time)) { toast("Ungültiger Zeitpunkt"); return; }
-  const value = String($("#tempValue").value).replace(",", ".");
+  const time = readWhen($("#tempWhen"));
+  if (!time) { toast("Uhrzeit bitte als HH:MM eingeben"); return; }
+  const value = normNum($("#tempValue").value);
+  if (!value) { toast("Bitte Temperatur eingeben"); return; }
   const body = {
-    child_id: state.childId, celsius: value, method: $("#tempMethod").value,
+    child_id: state.childId, celsius: value, method: getTempMethod(),
     measured_at: time.toISOString(), note: $("#tempNote").value,
   };
   try {
@@ -399,9 +539,9 @@ async function deleteTemp() {
 /* ---------- Diagramm ---------- */
 function chartRange() {
   if (state.chartHours === "custom") {
-    const f = $("#chartFrom").value, t = $("#chartTo").value;
+    const f = parseDate($("#chartFrom").value), t = parseDate($("#chartTo").value);
     if (!f || !t) return null;
-    const from = new Date(f + "T00:00:00"), to = new Date(t + "T23:59:59");
+    const from = f, to = new Date(t.getFullYear(), t.getMonth(), t.getDate(), 23, 59, 59);
     return to > from ? { from, to } : null;
   }
   const to = new Date();
@@ -412,7 +552,7 @@ async function loadChart() {
   const box = $("#chartBox");
   if (!state.childId) { box.innerHTML = `<div class="empty">Kein Kind ausgewählt.</div>`; $("#chartSummary").innerHTML = ""; return; }
   const r = chartRange();
-  if (!r) { box.innerHTML = `<div class="empty">Bitte Von- und Bis-Datum wählen.</div>`; $("#chartSummary").innerHTML = ""; return; }
+  if (!r) { box.innerHTML = `<div class="empty">Bitte Von- und Bis-Datum als TT.MM.JJJJ eingeben.</div>`; $("#chartSummary").innerHTML = ""; return; }
   try {
     state.chart = await api(`chart?child_id=${state.childId}&from=${encodeURIComponent(r.from.toISOString())}&to=${encodeURIComponent(r.to.toISOString())}`);
   } catch (e) { toast(e.message); return; }
@@ -492,8 +632,8 @@ function renderChart() {
     const midnight = d.getHours() === 0 && d.getMinutes() === 0;
     svg += `<line class="grid" x1="${x}" x2="${x}" y1="${padT}" y2="${bottom}" ${midnight ? 'stroke-width="1.5"' : ""}/>`;
     const lbl = daily || midnight
-      ? d.toLocaleDateString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit" })
-      : d.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+      ? `${WD_SHORT[d.getDay()]} ${fmtDM(d)}`
+      : fmtHM(d);
     svg += `<text x="${x}" y="${axisY + 16}" text-anchor="middle">${esc(lbl)}</text>`;
   });
 
@@ -595,25 +735,29 @@ function medSummary(m) {
   return parts.join(" · ");
 }
 
+const matches = (m, q) => !q || m.name.toLowerCase().includes(q) || m.active_ingredient.toLowerCase().includes(q);
+
 function renderMedList() {
   const q = $("#medSearch").value.trim().toLowerCase();
-  const list = state.meds.filter((m) => !q || m.name.toLowerCase().includes(q) || m.active_ingredient.toLowerCase().includes(q));
+  const list = state.meds.filter((m) => matches(m, q));
   const el = $("#medList");
   if (!list.length) { el.innerHTML = `<div class="empty">Keine Medikamente gefunden.</div>`; return; }
   el.innerHTML = list.map((m) => `
     <div class="item clickable" data-id="${m.id}">
-      <div>
-        <div class="title">${m.favorite ? '<span class="fav-star">★</span> ' : ""}${esc(m.name)}</div>
+      <div class="main">
+        <div class="title">${m.favorite ? star() + " " : ""}${esc(m.name)}</div>
         <div class="sub"><span class="tag">${esc(m.active_ingredient)}</span><span class="tag">${esc(m.form || "–")}</span><span class="tag">${esc(m.route || "–")}</span></div>
         <div class="sub">${esc(medSummary(m))}</div>
       </div>
-      <span class="muted">›</span>
+      <span class="chev">${icon("chevron")}</span>
     </div>`).join("");
   el.querySelectorAll(".item").forEach((it) => it.addEventListener("click", () => openMedDialog(Number(it.dataset.id))));
 }
 
 const MED_FORM_FIELDS = ["name", "active_ingredient", "form", "route", "dose_unit", "mg_per_unit", "default_dose",
   "dose_mg_per_kg", "max_single_mg", "min_interval_hours", "max_doses_per_24h", "max_mg_per_kg_day", "notes"];
+const MED_NUM_FIELDS = new Set(["mg_per_unit", "default_dose", "dose_mg_per_kg", "max_single_mg",
+  "min_interval_hours", "max_doses_per_24h", "max_mg_per_kg_day"]);
 
 function openMedDialog(id = null) {
   state.editingMedId = id;
@@ -631,7 +775,7 @@ async function saveMed(ev) {
   ev.preventDefault();
   const f = $("#medForm");
   const body = {};
-  MED_FORM_FIELDS.forEach((k) => { body[k] = f.elements[k].value; });
+  MED_FORM_FIELDS.forEach((k) => { body[k] = MED_NUM_FIELDS.has(k) ? normNum(f.elements[k].value) : f.elements[k].value; });
   body.favorite = f.elements.favorite.checked;
   try {
     if (state.editingMedId) await api(`medications/${state.editingMedId}`, { method: "PUT", body });
@@ -657,29 +801,59 @@ async function deleteMed() {
 /* ---------- Gabe erfassen ---------- */
 let pendingForce = false;
 
-function fillDoseMedSelect(selectedId) {
-  const q = $("#doseMedFilter").value.trim().toLowerCase();
-  const sel = $("#doseMed");
-  const list = state.meds.filter((m) => !q || m.name.toLowerCase().includes(q) || m.active_ingredient.toLowerCase().includes(q));
-  sel.innerHTML = list.map((m) => `<option value="${m.id}">${esc(m.name)} — ${esc(m.active_ingredient)}</option>`).join("");
-  if (selectedId && list.some((m) => m.id === selectedId)) sel.value = String(selectedId);
-  else if (list.length === 1) sel.value = String(list[0].id);
-}
-
 function statusFor(med) {
   const key = (med.active_ingredient || med.name).trim().toLowerCase().replace(/\s+/g, " ");
   return (state.status?.ingredients || []).find((s) => s.key === key);
 }
 
+function renderDosePicker() {
+  renderQuick($("#doseQuick"), selectDoseMed, state.doseMedId);
+  const q = $("#doseMedFilter").value.trim().toLowerCase();
+  // ohne Suche: Medikamente aus der Schnellauswahl nicht doppelt auflisten
+  const { favs, recent } = quickMeds();
+  const shown = new Set(q ? [] : [...favs, ...recent].map((m) => m.id));
+  const list = state.meds.filter((m) => matches(m, q) && !shown.has(m.id));
+  $("#doseMedList").innerHTML = list.length ? list.map((m) => `
+    <button type="button" class="pick" data-med="${m.id}">
+      <div>${m.favorite ? star() + " " : ""}${esc(m.name)}</div>
+      <div class="sub">${esc(m.active_ingredient)} · ${esc(m.form || "")} · ${esc(m.route || "")}</div>
+    </button>`).join("") : `<div class="muted small">Nichts gefunden.</div>`;
+  $("#doseMedList").querySelectorAll(".pick").forEach((b) => b.addEventListener("click", () => selectDoseMed(Number(b.dataset.med))));
+}
+
+function showDosePicker(show) {
+  $("#dosePicker").hidden = !show;
+  $("#doseSelected").hidden = show;
+  $("#doseForm .sheet-actions").hidden = show;
+  if (show) { $("#doseMedFilter").value = ""; renderDosePicker(); }
+}
+
+function selectDoseMed(id) {
+  state.doseMedId = id;
+  showDosePicker(false);
+  onDoseMedChange();
+}
+
+function stepFor(unit) { return unit === "ml" ? 0.5 : unit === "mg" ? 10 : 1; }
+
+function stepDose(dir) {
+  const med = state.meds.find((m) => m.id === state.doseMedId);
+  const step = stepFor(med?.dose_unit);
+  const v = parseFloat(normNum($("#doseAmount").value)) || 0;
+  const n = dir > 0 ? (Math.floor(v / step + 1e-9) + 1) * step : (Math.ceil(v / step - 1e-9) - 1) * step;
+  $("#doseAmount").value = fmtNum(Math.max(0, Math.round(n * 100) / 100));
+  resetDoseWarnings();
+}
+
 async function onDoseMedChange(keepAmount = false) {
   resetDoseWarnings();
-  renderQuick($("#doseQuick"), pickDoseMed, Number($("#doseMed").value));
-  const med = state.meds.find((m) => m.id === Number($("#doseMed").value));
+  const med = state.meds.find((m) => m.id === state.doseMedId);
   const info = $("#doseMedInfo");
   if (!med) { info.innerHTML = ""; $("#doseUnit").textContent = ""; return; }
+  $("#doseMedName").innerHTML = `${med.favorite ? star() + " " : ""}${esc(shortName(med.name))}`;
+  $("#doseMedSub").textContent = [med.active_ingredient, med.form, med.route].filter(Boolean).join(" · ");
   $("#doseUnit").textContent = med.dose_unit;
-  let html = `<div><b>${esc(med.active_ingredient)}</b> · ${esc(med.form || "")} · ${esc(med.route || "")}</div>
-    <div class="muted">${esc(medSummary(med))}</div>`;
+  let html = `<div class="muted">${esc(medSummary(med))}</div>`;
   let amount = med.default_dose;
   const child = currentChild();
   try {
@@ -691,7 +865,7 @@ async function onDoseMedChange(keepAmount = false) {
         const mg = med.default_dose * med.mg_per_unit;
         html += `<div class="muted">${fmtNum(med.default_dose)} ${esc(med.dose_unit)} = ${fmtNum(mg)} mg (${fmtNum(mg / child.weight_kg)} mg/kg)</div>`;
       }
-      if (suggestion.amount != null && ["ml", "Tropfen", "mg"].includes(med.dose_unit)) {
+      if (suggestion.amount != null && divisible) {
         amount = med.dose_unit === "Tropfen" ? Math.round(suggestion.amount) : Math.round(suggestion.amount * 10) / 10;
       }
     } else if (med.dose_mg_per_kg && !child?.weight_kg) {
@@ -700,17 +874,11 @@ async function onDoseMedChange(keepAmount = false) {
   } catch (_) { /* Vorschlag optional */ }
   const st = statusFor(med);
   if (st && !st.allowed_now && !state.editingDose) {
-    html += `<div style="color:var(--wait);font-weight:600">⏳ ${esc(st.ingredient)} erst wieder ab ${fmtTime(st.next_allowed_at)}</div>`;
+    html += `<div class="wait-note">${icon("clock", "sm")} ${esc(st.ingredient)} erst wieder ab ${fmtTime(st.next_allowed_at)}</div>`;
   }
   if (med.notes) html += `<div class="muted small">${esc(med.notes)}</div>`;
   info.innerHTML = html;
-  if (!keepAmount) $("#doseAmount").value = amount ?? "";
-}
-
-function pickDoseMed(id) {
-  $("#doseMedFilter").value = "";
-  fillDoseMedSelect(id);
-  onDoseMedChange();
+  if (!keepAmount) $("#doseAmount").value = amount != null ? fmtNum(amount) : "";
 }
 
 function resetDoseWarnings() {
@@ -718,6 +886,7 @@ function resetDoseWarnings() {
   $("#doseWarnings").hidden = true;
   $("#doseSubmit").textContent = "Speichern";
   $("#doseSubmit").classList.remove("danger");
+  $("#doseSubmit").classList.add("primary");
 }
 
 async function openDoseDialog(medId = null, dose = null) {
@@ -725,22 +894,22 @@ async function openDoseDialog(medId = null, dose = null) {
   if (!state.meds.length) await loadMeds();
   state.editingDose = dose;
   $("#doseForm").reset();
-  $("#doseMedFilter").value = "";
   $("#doseDialogTitle").textContent = dose ? "Gabe bearbeiten" : "Gabe erfassen";
   $("#doseDelete").hidden = !dose;
   if (dose && !state.meds.some((m) => m.id === dose.medication_id)) {
-    // archiviertes Medikament: trotzdem auswählbar machen
+    // archiviertes Medikament: trotzdem anzeigen
     const all = await api("medications?archived=1");
     const med = all.find((m) => m.id === dose.medication_id);
     if (med) state.meds.push(med);
   }
-  fillDoseMedSelect(medId);
-  $("#doseTime").value = toLocalInput(dose ? new Date(dose.given_at) : roundToQuarter(new Date()));
+  state.doseMedId = medId;
+  setWhen($("#doseWhen"), dose ? new Date(dose.given_at) : roundToQuarter(new Date()));
   resetDoseWarnings();
+  showDosePicker(!medId);
   $("#doseDialog").showModal();
-  await onDoseMedChange(!!dose);
+  if (medId) await onDoseMedChange(!!dose);
   if (dose) {
-    $("#doseAmount").value = dose.amount;
+    $("#doseAmount").value = fmtNum(dose.amount);
     $("#doseNote").value = dose.note || "";
   }
 }
@@ -758,14 +927,15 @@ async function deleteDose() {
 
 async function saveDose(ev) {
   ev.preventDefault();
-  const medId = Number($("#doseMed").value);
-  if (!medId) { toast("Bitte Medikament wählen"); return; }
-  const time = new Date($("#doseTime").value);
-  if (isNaN(time)) { toast("Ungültiger Zeitpunkt"); return; }
+  if (!state.doseMedId) { toast("Bitte Medikament wählen"); return; }
+  const time = readWhen($("#doseWhen"));
+  if (!time) { toast("Uhrzeit bitte als HH:MM eingeben"); return; }
+  const amount = normNum($("#doseAmount").value);
+  if (!amount) { toast("Bitte Menge eingeben"); return; }
   const body = {
     child_id: state.childId,
-    medication_id: medId,
-    amount: $("#doseAmount").value,
+    medication_id: state.doseMedId,
+    amount,
     given_at: time.toISOString(),
     note: $("#doseNote").value,
     force: pendingForce,
@@ -779,11 +949,13 @@ async function saveDose(ev) {
   } catch (e) {
     if (e.status === 409 && e.data?.warnings) {
       const w = $("#doseWarnings");
-      w.innerHTML = `<b>⚠️ Achtung</b><ul>${e.data.warnings.map((x) => `<li>${esc(x.message)}</li>`).join("")}</ul>
+      w.innerHTML = `<b>${icon("alert", "sm")} Achtung</b><ul>${e.data.warnings.map((x) => `<li>${esc(x.message)}</li>`).join("")}</ul>
         Nur speichern, wenn dies ärztlich so verordnet ist oder bereits gegeben wurde.`;
       w.hidden = false;
+      w.scrollIntoView({ block: "nearest", behavior: "smooth" });
       pendingForce = true;
       $("#doseSubmit").textContent = "Trotzdem speichern";
+      $("#doseSubmit").classList.remove("primary");
       $("#doseSubmit").classList.add("danger");
     } else {
       toast(e.message);
@@ -793,36 +965,53 @@ async function saveDose(ev) {
 
 /* ---------- Init ---------- */
 function bind() {
+  hydrateIcons();
   document.querySelectorAll("nav.bottom button").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
   document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
+  // Tipp auf den abgedunkelten Hintergrund schliesst das Sheet
+  document.querySelectorAll("dialog").forEach((d) => d.addEventListener("click", (e) => { if (e.target === d) d.close(); }));
   $("#btnAddDose").addEventListener("click", () => openDoseDialog());
-  $("#btnAddMed").addEventListener("click", () => openMedDialog());
   $("#btnAddTemp").addEventListener("click", () => openTempDialog());
+  $("#btnAddMed").addEventListener("click", () => openMedDialog());
+  $("#btnAddChild").addEventListener("click", () => openChildDialog());
+  $("#medSearch").addEventListener("input", renderMedList);
+
+  buildWhen($("#doseWhen"), { quarter: true });
+  buildWhen($("#tempWhen"), { quarter: false });
+  $("#doseMedFilter").addEventListener("input", renderDosePicker);
+  $("#doseChange").addEventListener("click", () => showDosePicker(true));
+  document.querySelectorAll("[data-step]").forEach((b) => b.addEventListener("click", () => stepDose(Number(b.dataset.step))));
+  document.querySelectorAll("[data-tstep]").forEach((b) => b.addEventListener("click", () => stepTemp(Number(b.dataset.tstep))));
+  $("#doseDelete").addEventListener("click", deleteDose);
+  $("#doseAmount").addEventListener("input", resetDoseWarnings);
+  $("#doseWhen").addEventListener("input", resetDoseWarnings);
+  $("#doseForm").addEventListener("submit", saveDose);
+
+  document.querySelectorAll("#tempMethod button").forEach((b) => b.addEventListener("click", () =>
+    setTempMethod(b.classList.contains("active") ? "" : b.dataset.v)));
   $("#tempForm").addEventListener("submit", saveTemp);
   $("#tempDelete").addEventListener("click", deleteTemp);
-  const today = toLocalInput(new Date()).slice(0, 10);
-  $("#chartTo").value = today;
-  $("#chartFrom").value = toLocalInput(new Date(Date.now() - 6 * 86400000)).slice(0, 10);
+
+  $("#medForm").addEventListener("submit", saveMed);
+  $("#childForm").addEventListener("submit", saveChild);
+  $("#medDelete").addEventListener("click", deleteMed);
+  $("#childDelete").addEventListener("click", deleteChild);
+
+  document.querySelectorAll(".date-input").forEach(bindDateInput);
+  $("#chartTo").value = fmtDate(new Date());
+  $("#chartFrom").value = fmtDate(new Date(Date.now() - 6 * 86400000));
   document.querySelectorAll("#chartRanges button").forEach((b) => b.addEventListener("click", () => {
     document.querySelectorAll("#chartRanges button").forEach((x) => x.classList.toggle("active", x === b));
     state.chartHours = b.dataset.hours === "custom" ? "custom" : Number(b.dataset.hours);
     $("#chartCustom").hidden = state.chartHours !== "custom";
     loadChart();
   }));
-  ["#chartFrom", "#chartTo"].forEach((s) => $(s).addEventListener("change", loadChart));
+  ["#chartFrom", "#chartTo"].forEach((s) => {
+    $(s).addEventListener("change", loadChart);
+    $(s).addEventListener("input", () => { if ($(s).value.length === 10 && parseDate($(s).value)) loadChart(); });
+  });
   let rt;
   window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (state.view === "chart") renderChart(); }, 150); });
-  $("#btnAddChild").addEventListener("click", () => openChildDialog());
-  $("#medSearch").addEventListener("input", renderMedList);
-  $("#doseMedFilter").addEventListener("input", () => { fillDoseMedSelect(Number($("#doseMed").value)); onDoseMedChange(); });
-  $("#doseMed").addEventListener("change", () => onDoseMedChange());
-  $("#doseDelete").addEventListener("click", deleteDose);
-  ["#doseAmount", "#doseTime"].forEach((s) => $(s).addEventListener("input", resetDoseWarnings));
-  $("#doseForm").addEventListener("submit", saveDose);
-  $("#medForm").addEventListener("submit", saveMed);
-  $("#childForm").addEventListener("submit", saveChild);
-  $("#medDelete").addEventListener("click", deleteMed);
-  $("#childDelete").addEventListener("click", deleteChild);
 }
 
 async function init() {

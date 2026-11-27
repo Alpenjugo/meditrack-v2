@@ -3,26 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="format-detection" content="telephone=no">
   <title>MediTrack</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="top">
-    <h1>💊 MediTrack</h1>
-    <div id="childTabs" class="child-tabs" role="tablist"></div>
+    <div id="childTabs" class="child-tabs" role="tablist" aria-label="Kind wählen"></div>
   </header>
 
   <main>
     <!-- Übersicht -->
     <section id="view-status" class="view active">
       <div class="add-row">
-        <button id="btnAddDose" class="btn primary big">+ Gabe erfassen</button>
-        <button id="btnAddTemp" class="btn big temp-btn">🌡 Temperatur</button>
+        <button id="btnAddDose" class="btn primary big"><i data-icon="plus"></i>Gabe erfassen</button>
+        <button id="btnAddTemp" class="btn big secondary"><i data-icon="thermo"></i>Temperatur</button>
       </div>
       <div id="lastTemp"></div>
       <div id="quickPicks" class="quick"></div>
       <div id="statusList" class="cards"></div>
-      <p class="disclaimer">Hinweis: Sperrzeiten und Höchstmengen sind hinterlegte Richtwerte.
+      <p class="disclaimer">Sperrzeiten und Höchstmengen sind hinterlegte Richtwerte.
         Massgebend sind Packungsbeilage und ärztliche Verordnung.</p>
     </section>
 
@@ -34,7 +34,7 @@
 
     <!-- Diagramm -->
     <section id="view-chart" class="view">
-      <h2>Verlauf als Diagramm</h2>
+      <h2>Diagramm</h2>
       <div class="ranges" id="chartRanges" role="group" aria-label="Zeitraum">
         <button data-hours="24">24 h</button>
         <button data-hours="72" class="active">3 Tage</button>
@@ -43,8 +43,8 @@
         <button data-hours="custom">Eigener</button>
       </div>
       <div id="chartCustom" class="grid2 custom-range" hidden>
-        <label>Von <input id="chartFrom" type="date"></label>
-        <label>Bis <input id="chartTo" type="date"></label>
+        <label>Von <input id="chartFrom" class="date-input" type="text" inputmode="numeric" placeholder="TT.MM.JJJJ" maxlength="10" autocomplete="off"></label>
+        <label>Bis <input id="chartTo" class="date-input" type="text" inputmode="numeric" placeholder="TT.MM.JJJJ" maxlength="10" autocomplete="off"></label>
       </div>
       <div id="chartBox" class="chart-box"></div>
       <div id="chartTip" class="chart-tip" hidden></div>
@@ -55,9 +55,9 @@
     <section id="view-meds" class="view">
       <div class="row-between">
         <h2>Medikamente</h2>
-        <button id="btnAddMed" class="btn primary">+ Neu</button>
+        <button id="btnAddMed" class="btn primary"><i data-icon="plus"></i>Neu</button>
       </div>
-      <input id="medSearch" type="search" placeholder="Suchen (Name oder Wirkstoff)…" class="search">
+      <input id="medSearch" type="search" placeholder="Suchen (Name oder Wirkstoff)" class="search">
       <div id="medList" class="list"></div>
     </section>
 
@@ -65,154 +65,180 @@
     <section id="view-children" class="view">
       <div class="row-between">
         <h2>Kinder</h2>
-        <button id="btnAddChild" class="btn primary">+ Kind</button>
+        <button id="btnAddChild" class="btn primary"><i data-icon="plus"></i>Kind</button>
       </div>
-      <p class="muted">Das Gewicht wird für den Dosisvorschlag und die Tageshöchstmenge (mg/kg) verwendet – bitte aktuell halten.</p>
+      <p class="muted small">Das Gewicht wird für den Dosisvorschlag und die Tageshöchstmenge (mg/kg) verwendet – bitte aktuell halten.</p>
       <div id="childList" class="list"></div>
-      <p><a href="api/export" class="btn ghost" download>Daten exportieren (JSON)</a></p>
+      <p><a href="api/export" class="btn ghost" download><i data-icon="download"></i>Daten exportieren (JSON)</a></p>
     </section>
   </main>
 
   <nav class="bottom">
-    <button data-view="status" class="active">🏠<span>Übersicht</span></button>
-    <button data-view="history">🕘<span>Verlauf</span></button>
-    <button data-view="chart">📈<span>Diagramm</span></button>
-    <button data-view="meds">💊<span>Medikamente</span></button>
-    <button data-view="children">👶<span>Kinder</span></button>
+    <button data-view="status" class="active"><i data-icon="home"></i><span>Übersicht</span></button>
+    <button data-view="history"><i data-icon="list"></i><span>Verlauf</span></button>
+    <button data-view="chart"><i data-icon="chart"></i><span>Diagramm</span></button>
+    <button data-view="meds"><i data-icon="pill"></i><span>Medikamente</span></button>
+    <button data-view="children"><i data-icon="user"></i><span>Kinder</span></button>
   </nav>
 
-  <!-- Dialog: Gabe erfassen -->
-  <dialog id="doseDialog">
-    <form id="doseForm" method="dialog">
-      <h3 id="doseDialogTitle">Gabe erfassen</h3>
-      <div id="doseQuick" class="quick"></div>
-      <label>Medikament
-        <input id="doseMedFilter" type="search" placeholder="Filtern…" autocomplete="off">
-        <select id="doseMed" required size="6"></select>
-      </label>
-      <div id="doseMedInfo" class="info"></div>
-      <div class="grid2">
-        <label>Menge
-          <div class="with-unit"><input id="doseAmount" type="number" step="any" min="0" inputmode="decimal" required><span id="doseUnit"></span></div>
-        </label>
-        <label>Zeitpunkt
-          <input id="doseTime" type="datetime-local" required>
-        </label>
+  <!-- Dialog: Gabe -->
+  <dialog id="doseDialog" class="sheet">
+    <form id="doseForm" method="dialog" novalidate>
+      <div class="sheet-head">
+        <h3 id="doseDialogTitle">Gabe erfassen</h3>
+        <button type="button" class="icon-btn" data-close aria-label="Schliessen"><i data-icon="x"></i></button>
       </div>
-      <label>Notiz <input id="doseNote" type="text" maxlength="500" placeholder="z. B. Fieber 39.2 °C"></label>
-      <div id="doseWarnings" class="warnings" hidden></div>
-      <div class="actions">
+      <div class="sheet-body">
+        <div id="dosePicker">
+          <div id="doseQuick" class="quick"></div>
+          <input id="doseMedFilter" type="search" placeholder="Medikament suchen" autocomplete="off" class="search">
+          <div id="doseMedList" class="pick-list"></div>
+        </div>
+        <div id="doseSelected" hidden>
+          <div class="selected-med">
+            <div><div class="title" id="doseMedName"></div><div class="sub" id="doseMedSub"></div></div>
+            <button type="button" class="btn small ghost" id="doseChange">Ändern</button>
+          </div>
+          <div id="doseMedInfo" class="info"></div>
+          <label>Menge</label>
+          <div class="stepper">
+            <button type="button" class="step" data-step="-1" aria-label="weniger"><i data-icon="minus"></i></button>
+            <input id="doseAmount" type="text" inputmode="decimal" autocomplete="off">
+            <span id="doseUnit" class="unit"></span>
+            <button type="button" class="step" data-step="1" aria-label="mehr"><i data-icon="plus"></i></button>
+          </div>
+          <div class="when" id="doseWhen"></div>
+          <label>Notiz <input id="doseNote" type="text" maxlength="500" placeholder="optional"></label>
+          <div id="doseWarnings" class="warnings" hidden></div>
+        </div>
+      </div>
+      <div class="sheet-actions">
         <button type="button" class="btn danger" id="doseDelete" hidden>Löschen</button>
         <span class="spacer"></span>
-        <button type="button" class="btn ghost" data-close>Abbrechen</button>
-        <button type="submit" id="doseSubmit" class="btn primary">Speichern</button>
+        <button type="submit" id="doseSubmit" class="btn primary wide">Speichern</button>
       </div>
     </form>
   </dialog>
 
   <!-- Dialog: Temperatur -->
-  <dialog id="tempDialog">
-    <form id="tempForm" method="dialog">
-      <h3 id="tempDialogTitle">Temperatur erfassen</h3>
-      <div class="grid2">
-        <label>Temperatur
-          <div class="with-unit"><input id="tempValue" type="number" step="0.1" min="34" max="43" inputmode="decimal" required placeholder="38.5"><span>°C</span></div>
-        </label>
-        <label>Messart
-          <select id="tempMethod">
-            <option value="">–</option>
-            <option>Ohr</option><option>Stirn</option><option>rektal</option><option>Achsel</option><option>Mund</option>
-          </select>
-        </label>
+  <dialog id="tempDialog" class="sheet">
+    <form id="tempForm" method="dialog" novalidate>
+      <div class="sheet-head">
+        <h3 id="tempDialogTitle">Temperatur erfassen</h3>
+        <button type="button" class="icon-btn" data-close aria-label="Schliessen"><i data-icon="x"></i></button>
       </div>
-      <label>Zeitpunkt <input id="tempTime" type="datetime-local" required></label>
-      <label>Notiz <input id="tempNote" type="text" maxlength="500" placeholder="z. B. nach dem Schlafen"></label>
-      <div class="actions">
+      <div class="sheet-body">
+        <label>Temperatur</label>
+        <div class="stepper">
+          <button type="button" class="step" data-tstep="-0.1" aria-label="weniger"><i data-icon="minus"></i></button>
+          <input id="tempValue" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 38.5" class="big-input">
+          <span class="unit">°C</span>
+          <button type="button" class="step" data-tstep="0.1" aria-label="mehr"><i data-icon="plus"></i></button>
+        </div>
+        <label>Messart</label>
+        <div class="seg" id="tempMethod" role="radiogroup">
+          <button type="button" data-v="Ohr">Ohr</button>
+          <button type="button" data-v="Stirn">Stirn</button>
+          <button type="button" data-v="rektal">rektal</button>
+          <button type="button" data-v="Achsel">Achsel</button>
+          <button type="button" data-v="Mund">Mund</button>
+        </div>
+        <div class="when" id="tempWhen"></div>
+        <label>Notiz <input id="tempNote" type="text" maxlength="500" placeholder="optional"></label>
+      </div>
+      <div class="sheet-actions">
         <button type="button" class="btn danger" id="tempDelete" hidden>Löschen</button>
         <span class="spacer"></span>
-        <button type="button" class="btn ghost" data-close>Abbrechen</button>
-        <button type="submit" class="btn primary">Speichern</button>
+        <button type="submit" class="btn primary wide">Speichern</button>
       </div>
     </form>
   </dialog>
 
   <!-- Dialog: Medikament -->
-  <dialog id="medDialog">
+  <dialog id="medDialog" class="sheet">
     <form id="medForm" method="dialog">
-      <h3 id="medDialogTitle">Medikament</h3>
-      <label>Name / Produkt * <input name="name" required maxlength="120" placeholder="z. B. Dafalgan Sirup 30 mg/ml"></label>
-      <label>Wirkstoff * <input name="active_ingredient" required maxlength="120" list="ingredientList" placeholder="z. B. Paracetamol"></label>
-      <datalist id="ingredientList"></datalist>
-      <div class="grid2">
-        <label>Darreichungsform
-          <input name="form" list="formList" maxlength="120" placeholder="Sirup, Zäpfchen…">
-        </label>
-        <label>Art der Einnahme
-          <select name="route">
-            <option value="oral">oral (Mund)</option>
-            <option value="rektal">rektal (Zäpfchen)</option>
-            <option value="nasal">nasal (Nase)</option>
-            <option value="inhalativ">inhalativ</option>
-            <option value="äusserlich">äusserlich (Haut)</option>
-            <option value="Augen">Augen</option>
-            <option value="Ohren">Ohren</option>
-            <option value="andere">andere</option>
-          </select>
-        </label>
+      <div class="sheet-head">
+        <h3 id="medDialogTitle">Medikament</h3>
+        <button type="button" class="icon-btn" data-close aria-label="Schliessen"><i data-icon="x"></i></button>
       </div>
-      <datalist id="formList">
-        <option value="Sirup"><option value="Suspension"><option value="Tropfen"><option value="Zäpfchen">
-        <option value="Tablette"><option value="Kapsel"><option value="Granulat"><option value="Nasenspray">
-        <option value="Salbe"><option value="Inhalation"><option value="Lösung">
-      </datalist>
-      <fieldset>
-        <legend>Dosierung</legend>
+      <div class="sheet-body">
+        <label>Name / Produkt * <input name="name" required maxlength="120" placeholder="z. B. Dafalgan Sirup 30 mg/ml"></label>
+        <label>Wirkstoff * <input name="active_ingredient" required maxlength="120" list="ingredientList" placeholder="z. B. Paracetamol"></label>
+        <datalist id="ingredientList"></datalist>
         <div class="grid2">
-          <label>Einheit * <input name="dose_unit" required list="unitList" maxlength="30" value="ml"></label>
-          <label>mg Wirkstoff pro Einheit <input name="mg_per_unit" type="number" step="any" min="0" placeholder="z. B. 30"></label>
-          <label>Standardmenge pro Gabe <input name="default_dose" type="number" step="any" min="0"></label>
-          <label>mg pro kg (Einzeldosis) <input name="dose_mg_per_kg" type="number" step="any" min="0" placeholder="z. B. 15"></label>
-          <label>Max. Einzeldosis (mg) <input name="max_single_mg" type="number" step="any" min="0"></label>
+          <label>Darreichungsform
+            <input name="form" list="formList" maxlength="120" placeholder="Sirup, Zäpfchen…">
+          </label>
+          <label>Art der Einnahme
+            <select name="route">
+              <option value="oral">oral (Mund)</option>
+              <option value="rektal">rektal (Zäpfchen)</option>
+              <option value="nasal">nasal (Nase)</option>
+              <option value="inhalativ">inhalativ</option>
+              <option value="äusserlich">äusserlich (Haut)</option>
+              <option value="Augen">Augen</option>
+              <option value="Ohren">Ohren</option>
+              <option value="andere">andere</option>
+            </select>
+          </label>
         </div>
-      </fieldset>
-      <datalist id="unitList">
-        <option value="ml"><option value="Tropfen"><option value="Stück"><option value="Sprühstoss">
-        <option value="Hub"><option value="mg"><option value="Anwendung"><option value="Beutel">
-      </datalist>
-      <fieldset>
-        <legend>Sperrzeit &amp; Tageslimit</legend>
-        <div class="grid2">
-          <label>Wieder geben frühestens nach (h) * <input name="min_interval_hours" type="number" step="any" min="0" max="168" required value="6"></label>
-          <label>Max. Gaben pro 24 h <input name="max_doses_per_24h" type="number" step="1" min="0"></label>
-          <label>Max. mg/kg pro Tag <input name="max_mg_per_kg_day" type="number" step="any" min="0"></label>
-        </div>
-      </fieldset>
-      <label class="check"><input type="checkbox" name="favorite"> ★ Favorit (Schnellauswahl)</label>
-      <label>Notizen <textarea name="notes" rows="3" maxlength="2000"></textarea></label>
-      <p class="muted small">Sperrzeit und Tageslimit gelten pro <b>Wirkstoff</b> – also über alle Produkte mit demselben Wirkstoff hinweg.</p>
-      <div class="actions">
+        <datalist id="formList">
+          <option value="Sirup"><option value="Suspension"><option value="Tropfen"><option value="Zäpfchen">
+          <option value="Tablette"><option value="Kapsel"><option value="Granulat"><option value="Nasenspray">
+          <option value="Salbe"><option value="Inhalation"><option value="Lösung">
+        </datalist>
+        <fieldset>
+          <legend>Dosierung</legend>
+          <div class="grid2">
+            <label>Einheit * <input name="dose_unit" required list="unitList" maxlength="30" value="ml"></label>
+            <label>mg Wirkstoff pro Einheit <input name="mg_per_unit" type="text" inputmode="decimal" placeholder="z. B. 30"></label>
+            <label>Standardmenge pro Gabe <input name="default_dose" type="text" inputmode="decimal"></label>
+            <label>mg pro kg (Einzeldosis) <input name="dose_mg_per_kg" type="text" inputmode="decimal" placeholder="z. B. 15"></label>
+            <label>Max. Einzeldosis (mg) <input name="max_single_mg" type="text" inputmode="decimal"></label>
+          </div>
+        </fieldset>
+        <datalist id="unitList">
+          <option value="ml"><option value="Tropfen"><option value="Stück"><option value="Sprühstoss">
+          <option value="Hub"><option value="mg"><option value="Anwendung"><option value="Beutel">
+        </datalist>
+        <fieldset>
+          <legend>Sperrzeit &amp; Tageslimit</legend>
+          <div class="grid2">
+            <label>Wieder geben frühestens nach (h) * <input name="min_interval_hours" type="text" inputmode="decimal" required value="6"></label>
+            <label>Max. Gaben pro 24 h <input name="max_doses_per_24h" type="text" inputmode="numeric"></label>
+            <label>Max. mg/kg pro Tag <input name="max_mg_per_kg_day" type="text" inputmode="decimal"></label>
+          </div>
+        </fieldset>
+        <label class="check"><input type="checkbox" name="favorite"> Favorit (Schnellauswahl)</label>
+        <label>Notizen <textarea name="notes" rows="3" maxlength="2000"></textarea></label>
+        <p class="muted small">Sperrzeit und Tageslimit gelten pro <b>Wirkstoff</b> – also über alle Produkte mit demselben Wirkstoff hinweg.</p>
+      </div>
+      <div class="sheet-actions">
         <button type="button" class="btn danger" id="medDelete" hidden>Löschen</button>
         <span class="spacer"></span>
-        <button type="button" class="btn ghost" data-close>Abbrechen</button>
-        <button type="submit" class="btn primary">Speichern</button>
+        <button type="submit" class="btn primary wide">Speichern</button>
       </div>
     </form>
   </dialog>
 
   <!-- Dialog: Kind -->
-  <dialog id="childDialog">
+  <dialog id="childDialog" class="sheet">
     <form id="childForm" method="dialog">
-      <h3 id="childDialogTitle">Kind</h3>
-      <label>Name * <input name="name" required maxlength="60"></label>
-      <div class="grid2">
-        <label>Geburtsdatum <input name="birthdate" type="date"></label>
-        <label>Gewicht (kg) <input name="weight_kg" type="number" step="0.1" min="0.5" max="150" inputmode="decimal"></label>
+      <div class="sheet-head">
+        <h3 id="childDialogTitle">Kind</h3>
+        <button type="button" class="icon-btn" data-close aria-label="Schliessen"><i data-icon="x"></i></button>
       </div>
-      <div class="actions">
+      <div class="sheet-body">
+        <label>Name * <input name="name" required maxlength="60"></label>
+        <div class="grid2">
+          <label>Geburtsdatum <input name="birthdate" class="date-input" type="text" inputmode="numeric" placeholder="TT.MM.JJJJ" maxlength="10" autocomplete="off"></label>
+          <label>Gewicht (kg) <input name="weight_kg" type="text" inputmode="decimal" placeholder="z. B. 12.5"></label>
+        </div>
+      </div>
+      <div class="sheet-actions">
         <button type="button" class="btn danger" id="childDelete" hidden>Löschen</button>
         <span class="spacer"></span>
-        <button type="button" class="btn ghost" data-close>Abbrechen</button>
-        <button type="submit" class="btn primary">Speichern</button>
+        <button type="submit" class="btn primary wide">Speichern</button>
       </div>
     </form>
   </dialog>
