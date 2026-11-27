@@ -6,6 +6,7 @@ Fehler werden geloggt, brechen die App aber nie ab.
 Entitäten (pro Kind):
   sensor.meditrack_<kind>_letzte_gabe          Zeitpunkt der letzten Gabe
   sensor.meditrack_<kind>_<wirkstoff>          Zeitpunkt der nächsten möglichen Gabe
+  sensor.meditrack_<kind>_temperatur           zuletzt gemessene Temperatur (°C)
 Hinweis: Per API gesetzte Zustände überleben keinen HA-Neustart; deshalb
 wird regelmässig neu veröffentlicht.
 """
@@ -82,6 +83,16 @@ class Publisher:
                            "medication": last["medication_name"] if last else None,
                            "amount": f"{last['last_amount']:g} {last['last_unit']}" if last else None,
                        })
+            temp = status.get("last_temperature") if status else None
+            if temp:
+                self._post(f"sensor.meditrack_{cslug}_temperatur", temp["celsius"], {
+                    "friendly_name": f"{child['name']} Temperatur",
+                    "device_class": "temperature",
+                    "unit_of_measurement": "°C",
+                    "icon": "mdi:thermometer",
+                    "measured_at": temp["measured_at"],
+                    "method": temp["method"],
+                })
             for item in items:
                 self._post(
                     f"sensor.meditrack_{cslug}_{slugify(item['ingredient'])}",

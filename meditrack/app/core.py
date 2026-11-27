@@ -54,6 +54,18 @@ CREATE TABLE IF NOT EXISTS doses (
 
 CREATE INDEX IF NOT EXISTS idx_doses_child_time ON doses(child_id, given_at);
 
+CREATE TABLE IF NOT EXISTS temperatures (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    child_id INTEGER NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    measured_at TEXT NOT NULL,
+    celsius REAL NOT NULL,
+    method TEXT,
+    note TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_temps_child_time ON temperatures(child_id, measured_at);
+
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -70,6 +82,11 @@ NUMERIC_MED_FIELDS = {
     "mg_per_unit", "default_dose", "dose_mg_per_kg", "max_single_mg",
     "min_interval_hours", "max_mg_per_kg_day",
 }
+
+
+TEMP_METHODS = ["Ohr", "Stirn", "rektal", "Achsel", "Mund"]
+TEMP_MIN, TEMP_MAX = 34.0, 43.0
+FEVER_C = 38.0
 
 
 class ValidationError(ValueError):
@@ -419,6 +436,102 @@ class Store:
                 to_iso(around + timedelta(hours=48)))).fetchall()
         return [dict(r) for r in rows]
 
+    # --------------------------------------------------------- temperatures
+    def list_temperatures(self, child_id, limit=500, since=None, until=None):
+        sql = "SELECT * FROM temperatures WHERE child_id=?"
+        params = [child_id]
+        if since:
+            sql += " AND measured_at >= ?"
+            params.append(to_iso(since))
+        if until:
+            sql += " AND measured_at <= ?"
+            params.append(to_iso(until))
+        sql += " ORDER BY measured_at DESC LIMIT ?"
+        params.append(int(limit))
+        with self.lock:
+            rows = self.conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_temperature(self, temp_id):
+        with self.lock:
+            row = self.conn.execute(
+                "SELECT * FROM temperatures WHERE id=?", (temp_id,)).fetchone()
+        return dict(row) if row else None
+
+    def latest_temperature(self, child_id):
+        rows = self.list_temperatures(child_id, limit=1)
+        return rows[0] if rows else None
+
+    def _clean_temp(self, data):
+        celsius = _num(data.get("celsius"), "Temperatur", allow_none=False)
+        if not (TEMP_MIN <= celsius <= TEMP_MAX):
+            raise ValidationError(
+                f"Temperatur muss zwischen {TEMP_MIN:g} und {TEMP_MAX:g} °C liegen")
+        measured_at = parse_iso(data["measured_at"]) if data.get("measured_at") else utcnow()
+        if measured_at > utcnow() + timedelta(minutes=5):
+            raise ValidationError("Zeitpunkt liegt in der Zukunft")
+        method = _text(data.get("method"), "Messart", max_len=20)
+        if method and method not in TEMP_METHODS:
+            raise ValidationError("Unbekannte Messart")
+        return {
+            "celsius": round(celsius, 1),
+            "measured_at": to_iso(measured_at),
+            "method": method,
+            "note": _text(data.get("note"), "Notiz", max_len=500),
+        }
+
+    def add_temperature(self, data):
+        try:
+            child_id = int(data.get("child_id"))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("Kind ist erforderlich") from exc
+        if not self.get_child(child_id):
+            raise ValidationError("Kind nicht gefunden")
+        t = self._clean_temp(data)
+        with self.lock, self.conn:
+            cur = self.conn.execute(
+                "INSERT INTO temperatures(child_id, measured_at, celsius, method, note, "
+                "created_at) VALUES(?,?,?,?,?,?)",
+                (child_id, t["measured_at"], t["celsius"], t["method"], t["note"],
+                 to_iso(utcnow())))
+        return self.get_temperature(cur.lastrowid)
+
+    def update_temperature(self, temp_id, data):
+        if not self.get_temperature(temp_id):
+            return None
+        t = self._clean_temp(data)
+        with self.lock, self.conn:
+            self.conn.execute(
+                "UPDATE temperatures SET measured_at=?, celsius=?, method=?, note=? "
+                "WHERE id=?",
+                (t["measured_at"], t["celsius"], t["method"], t["note"], temp_id))
+        return self.get_temperature(temp_id)
+
+    def delete_temperature(self, temp_id):
+        with self.lock, self.conn:
+            cur = self.conn.execute("DELETE FROM temperatures WHERE id=?", (temp_id,))
+        return cur.rowcount > 0
+
+    def chart(self, child_id, start: datetime, end: datetime):
+        """Temperaturen und Gaben in einem Zeitraum (aufsteigend) für das Diagramm."""
+        if end <= start:
+            raise ValidationError("Zeitraum ungültig")
+        if end - start > timedelta(days=366):
+            raise ValidationError("Zeitraum höchstens 1 Jahr")
+        temps = self.list_temperatures(child_id, limit=100_000, since=start, until=end)
+        with self.lock:
+            rows = self.conn.execute(
+                "SELECT d.id, d.given_at, d.amount, d.unit, d.mg, d.note, d.medication_id, "
+                "m.name AS medication_name, m.active_ingredient "
+                "FROM doses d JOIN medications m ON m.id = d.medication_id "
+                "WHERE d.child_id=? AND d.given_at >= ? AND d.given_at <= ? "
+                "ORDER BY d.given_at", (child_id, to_iso(start), to_iso(end))).fetchall()
+        return {
+            "from": to_iso(start), "to": to_iso(end), "fever_c": FEVER_C,
+            "temperatures": temps[::-1],
+            "doses": [dict(r) for r in rows],
+        }
+
     # --------------------------------------------------------------- status
     def status(self, child_id, now=None, lookback_hours=48):
         child = self.get_child(child_id)
@@ -433,7 +546,9 @@ class Store:
                 "ORDER BY d.given_at",
                 (child_id, to_iso(now - timedelta(hours=lookback_hours)),
                  to_iso(now))).fetchall()
-        return compute_status(child, [dict(r) for r in rows], now)
+        result = compute_status(child, [dict(r) for r in rows], now)
+        result["last_temperature"] = self.latest_temperature(child_id)
+        return result
 
 
 # ---------------------------------------------------------------------------

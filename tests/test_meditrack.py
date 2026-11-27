@@ -236,6 +236,31 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(len(names), 2)
         st.conn.close()
 
+    def test_temperatures(self):
+        cid = self.child["id"]
+        t1 = self.store.add_temperature({"child_id": cid, "celsius": "38.66", "method": "Ohr",
+                                         "measured_at": to_iso(utcnow() - timedelta(hours=3))})
+        self.assertEqual(t1["celsius"], 38.7)
+        t2 = self.store.add_temperature({"child_id": cid, "celsius": 37.4})
+        self.assertEqual(self.store.status(cid)["last_temperature"]["id"], t2["id"])
+        for bad in ({"celsius": 30}, {"celsius": 44}, {"celsius": ""}, {"celsius": 38, "method": "Zehe"},
+                    {"celsius": 38, "measured_at": to_iso(utcnow() + timedelta(hours=1))}):
+            with self.assertRaises(ValidationError):
+                self.store.add_temperature({"child_id": cid, **bad})
+        upd = self.store.update_temperature(t1["id"], {"celsius": 39.1, "measured_at": t1["measured_at"]})
+        self.assertEqual(upd["celsius"], 39.1)
+        self.assertIsNone(self.store.update_temperature(9999, {"celsius": 38}))
+        self.dose(self.para_syrup, 6, hours_ago=2)
+        self.dose(self.para_syrup, 6, hours_ago=80)
+        chart = self.store.chart(cid, utcnow() - timedelta(hours=24), utcnow())
+        self.assertEqual([t["celsius"] for t in chart["temperatures"]], [39.1, 37.4])  # aufsteigend
+        self.assertEqual(len(chart["doses"]), 1)
+        with self.assertRaises(ValidationError):
+            self.store.chart(cid, utcnow(), utcnow() - timedelta(hours=1))
+        self.assertTrue(self.store.delete_temperature(t2["id"]))
+        self.store.delete_child(cid)  # Kaskade
+        self.assertEqual(self.store.list_temperatures(cid), [])
+
     def test_slugify(self):
         self.assertEqual(slugify("Jürg Müller"), "juerg_mueller")
         self.assertEqual(slugify("Colecalciferol (Vitamin D3)"), "colecalciferol_vitamin_d3")
@@ -306,7 +331,20 @@ class HttpTests(unittest.TestCase):
         status, err = self.req("POST", "api/children", {"name": ""})
         self.assertEqual(status, 400)
         self.assertEqual(self.req("GET", "api/unknown")[0], 404)
-        self.assertEqual(self.req("GET", "api/export")[0], 200)
+        status, temp = self.req("POST", "api/temperatures", {"child_id": child["id"], "celsius": 39.2, "method": "rektal"})
+        self.assertEqual(status, 201)
+        self.assertEqual(self.req("POST", "api/temperatures", {"child_id": child["id"], "celsius": 50})[0], 400)
+        self.assertEqual(self.req("PUT", f"api/temperatures/{temp['id']}", {"celsius": 38.9})[0], 200)
+        status, chart = self.req("GET", f"api/chart?child_id={child['id']}")
+        self.assertEqual(status, 200)
+        self.assertEqual(chart["temperatures"][0]["celsius"], 38.9)
+        self.assertEqual(len(chart["doses"]), 1)
+        self.assertEqual(self.req("GET", "api/chart?child_id=9999")[0], 404)
+        self.assertEqual(self.req("GET", f"api/chart?child_id={child['id']}&from=xyz")[0], 400)
+        status, exp = self.req("GET", "api/export")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(exp["temperatures"]), 1)
+        self.assertEqual(self.req("DELETE", f"api/temperatures/{temp['id']}")[0], 204)
 
     def test_ingress_only_blocks_other_ips(self):
         self.app.ingress_only = True

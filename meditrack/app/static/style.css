@@ -13,6 +13,11 @@
   --danger: #c62f2f;
   --danger-bg: #fdeaea;
   --radius: 14px;
+  --temp: #6a4ce2;
+  --grid: #e6e9ee;
+  --fever-bg: rgba(236, 70, 71, .07);
+  --s1: #257de0; --s2: #f47230; --s3: #00b894; --s4: #f2a600;
+  --s5: #ee7fac; --s6: #008a17;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -29,10 +34,16 @@
     --wait-bg: #33260f;
     --danger: #f07070;
     --danger-bg: #3a1a1a;
+    --temp: #9887ef;
+    --grid: #262d36;
+    --fever-bg: rgba(235, 98, 99, .10);
+    --s1: #338ced; --s2: #e76624; --s3: #00a888; --s4: #d28e05;
+    --s5: #e24d8b; --s6: #0aac23;
     color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -146,7 +157,7 @@ nav.bottom button {
   flex: 1; border: 0; background: none; color: var(--muted); font: inherit;
   padding: 8px 0 10px; font-size: 1.2rem; cursor: pointer; display: flex; flex-direction: column; align-items: center;
 }
-nav.bottom button span { font-size: .72rem; margin-top: 2px; }
+nav.bottom button span { font-size: .68rem; margin-top: 2px; }
 nav.bottom button.active { color: var(--primary); }
 
 .toast {
@@ -173,3 +184,40 @@ nav.bottom button.active { color: var(--primary); }
 label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: .95rem; }
 label.check input { width: auto; margin: 0; }
 .fav-star { color: var(--primary); }
+
+/* Temperatur */
+.add-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.add-row .btn { white-space: nowrap; padding-left: 8px; padding-right: 8px; }
+.add-row .btn.big { margin-bottom: 12px; }
+.temp-btn { background: var(--card); border-color: var(--line); color: var(--text); }
+.temp-line { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 8px 14px; margin-bottom: 14px; cursor: pointer; }
+.temp-line .val { font-size: 1.25rem; font-weight: 700; }
+.temp-line.fever .val { color: var(--danger); }
+.item .temp-val { font-weight: 700; }
+.item.fever .temp-val { color: var(--danger); }
+
+/* Diagramm */
+.ranges { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 12px; }
+.ranges button { border: 1px solid var(--line); background: var(--card); color: var(--text); font: inherit; font-size: .85rem;
+  padding: 6px 12px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+.ranges button.active { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+.custom-range { margin-bottom: 4px; }
+.chart-box { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 4px 4px; position: relative; }
+.chart-box svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
+.chart-box text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+.chart-box .lane-label { fill: var(--text); font-weight: 600; }
+.chart-box .grid { stroke: var(--grid); stroke-width: 1; }
+.chart-box .fever-band { fill: var(--fever-bg); }
+.chart-box .fever-line { stroke: var(--danger); stroke-width: 1; stroke-dasharray: 4 4; }
+.chart-box .fever-label { fill: var(--danger); }
+.chart-box .fever-label, .chart-box .lane-label { paint-order: stroke; stroke: var(--card); stroke-width: 3px; stroke-linejoin: round; }
+.chart-box .temp-path { fill: none; stroke: var(--temp); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-box .temp-dot { fill: var(--temp); stroke: var(--card); stroke-width: 2; }
+.chart-box .cross { stroke: var(--muted); stroke-width: 1; }
+.chart-tip { position: fixed; z-index: 15; pointer-events: none; background: var(--text); color: var(--bg);
+  padding: 6px 10px; border-radius: 8px; font-size: .8rem; max-width: 240px; line-height: 1.35; }
+.chart-summary { margin-top: 12px; display: grid; gap: 6px; }
+.chart-summary .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .85rem; }
+.chart-summary .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.chart-summary .sw.line { width: 16px; height: 3px; border-radius: 2px; vertical-align: 3px; }

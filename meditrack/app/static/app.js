@@ -12,7 +12,11 @@ const state = {
   editingDose: null,
   recent: [],
   history: [],
+  editingTemp: null,
+  chartHours: 72,
+  chart: null,
 };
+const FEVER = 38.0;
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
@@ -89,6 +93,7 @@ function showView(view) {
   document.querySelectorAll("nav.bottom button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   if (view === "history") loadHistory();
   if (view === "status") loadStatus();
+  if (view === "chart") loadChart();
   try { localStorage.setItem("meditrack.view", view); } catch (_) { /* ignorieren */ }
 }
 
@@ -108,7 +113,15 @@ function selectChild(id) {
   state.childId = id;
   try { localStorage.setItem("meditrack.child", String(id)); } catch (_) { /* ignorieren */ }
   renderChildTabs();
-  if (state.view === "history") loadHistory(); else loadStatus();
+  if (state.view === "history") loadHistory();
+  else if (state.view === "chart") loadChart();
+  else loadStatus();
+}
+
+function refreshViews() {
+  loadStatus();
+  if (state.view === "history") loadHistory();
+  if (state.view === "chart") loadChart();
 }
 
 function currentChild() { return state.children.find((c) => c.id === state.childId) || null; }
@@ -225,6 +238,8 @@ function renderStatus() {
   renderQuick($("#quickPicks"), (id) => openDoseDialog(id));
   const el = $("#statusList");
   $("#btnAddDose").disabled = !state.childId;
+  $("#btnAddTemp").disabled = !state.childId;
+  renderLastTemp();
   if (!state.childId) {
     el.innerHTML = `<div class="empty">Erfasse zuerst ein Kind.<br><br>
       <button class="btn primary" id="emptyAddChild">+ Kind hinzufügen</button></div>`;
@@ -267,23 +282,56 @@ function renderStatus() {
     b.addEventListener("click", () => openDoseDialog(Number(b.dataset.med))));
 }
 
+function renderLastTemp() {
+  const el = $("#lastTemp");
+  const t = state.status?.last_temperature;
+  if (!state.childId || !t) { el.innerHTML = ""; return; }
+  const age = Date.now() - new Date(t.measured_at).getTime();
+  el.innerHTML = `<div class="temp-line ${t.celsius >= FEVER ? "fever" : ""}">
+    🌡 <span class="val">${fmtNum(t.celsius)} °C</span>
+    <span class="muted small">${fmtTime(t.measured_at)} (vor ${fmtDuration(age)})${t.method ? " · " + esc(t.method) : ""}</span></div>`;
+  el.firstElementChild.addEventListener("click", () => openTempDialog(t));
+}
+
 /* ---------- Verlauf ---------- */
 async function loadHistory() {
   const el = $("#historyList");
   if (!state.childId) { el.innerHTML = `<div class="empty">Kein Kind ausgewählt.</div>`; return; }
-  let doses;
-  try { doses = await api(`doses?child_id=${state.childId}&limit=300`); } catch (e) { toast(e.message); return; }
+  let doses, temps;
+  try {
+    [doses, temps] = await Promise.all([
+      api(`doses?child_id=${state.childId}&limit=300`), api(`temperatures?child_id=${state.childId}&limit=300`)]);
+  } catch (e) { toast(e.message); return; }
   state.history = doses;
-  if (!doses.length) { el.innerHTML = `<div class="empty">Noch keine Gaben erfasst.</div>`; return; }
+  state.tempHistory = temps;
+  const entries = [
+    ...doses.map((d) => ({ kind: "dose", at: d.given_at, d })),
+    ...temps.map((t) => ({ kind: "temp", at: t.measured_at, t })),
+  ].sort((a, b) => (a.at < b.at ? 1 : -1));
+  if (!entries.length) { el.innerHTML = `<div class="empty">Noch keine Gaben oder Messungen erfasst.</div>`; return; }
   let html = "", lastDay = "";
-  for (const d of doses) {
-    const dt = new Date(d.given_at);
+  for (const e of entries) {
+    const dt = new Date(e.at);
     const day = dt.toLocaleDateString("de-CH", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
     if (day !== lastDay) { html += `<div class="day">${esc(day)}</div>`; lastDay = day; }
+    const hm = dt.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+    if (e.kind === "temp") {
+      const t = e.t;
+      html += `
+      <div class="item clickable ${t.celsius >= FEVER ? "fever" : ""}" data-temp="${t.id}">
+        <div>
+          <div class="title">${hm} · 🌡 <span class="temp-val">${fmtNum(t.celsius)} °C</span></div>
+          <div class="sub">Temperatur${t.method ? " · " + esc(t.method) : ""}${t.note ? " · " + esc(t.note) : ""}</div>
+        </div>
+        <span class="muted">Bearbeiten ›</span>
+      </div>`;
+      continue;
+    }
+    const d = e.d;
     html += `
       <div class="item clickable" data-id="${d.id}">
         <div>
-          <div class="title">${dt.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })} · ${esc(d.medication_name)}</div>
+          <div class="title">${hm} · ${esc(d.medication_name)}</div>
           <div class="sub">${fmtNum(d.amount)} ${esc(d.unit)}${d.mg != null ? ` (${fmtNum(d.mg)} mg)` : ""} · ${esc(d.active_ingredient)} · ${esc(d.route || "")}${d.note ? " · " + esc(d.note) : ""}</div>
         </div>
         <span class="muted">Bearbeiten ›</span>
@@ -294,6 +342,239 @@ async function loadHistory() {
     const dose = state.history.find((x) => x.id === Number(it.dataset.id));
     if (dose) openDoseDialog(dose.medication_id, dose);
   }));
+  el.querySelectorAll(".item[data-temp]").forEach((it) => it.addEventListener("click", () => {
+    const t = state.tempHistory.find((x) => x.id === Number(it.dataset.temp));
+    if (t) openTempDialog(t);
+  }));
+}
+
+/* ---------- Temperatur ---------- */
+function openTempDialog(temp = null) {
+  if (!state.childId) return;
+  state.editingTemp = temp;
+  $("#tempForm").reset();
+  $("#tempDialogTitle").textContent = temp ? "Temperatur bearbeiten" : "Temperatur erfassen";
+  $("#tempDelete").hidden = !temp;
+  let method = "";
+  try { method = localStorage.getItem("meditrack.tempMethod") || ""; } catch (_) { /* ignorieren */ }
+  $("#tempValue").value = temp ? temp.celsius : "";
+  $("#tempMethod").value = temp ? (temp.method || "") : method;
+  // Messungen minutengenau (nicht auf 15 min gerundet)
+  $("#tempTime").value = toLocalInput(temp ? new Date(temp.measured_at) : new Date());
+  $("#tempNote").value = temp?.note || "";
+  $("#tempDialog").showModal();
+  if (!temp) $("#tempValue").focus();
+}
+
+async function saveTemp(ev) {
+  ev.preventDefault();
+  const time = new Date($("#tempTime").value);
+  if (isNaN(time)) { toast("Ungültiger Zeitpunkt"); return; }
+  const value = String($("#tempValue").value).replace(",", ".");
+  const body = {
+    child_id: state.childId, celsius: value, method: $("#tempMethod").value,
+    measured_at: time.toISOString(), note: $("#tempNote").value,
+  };
+  try {
+    if (state.editingTemp) await api(`temperatures/${state.editingTemp.id}`, { method: "PUT", body });
+    else await api("temperatures", { method: "POST", body });
+    try { localStorage.setItem("meditrack.tempMethod", body.method); } catch (_) { /* ignorieren */ }
+    $("#tempDialog").close();
+    toast("Temperatur gespeichert");
+    refreshViews();
+  } catch (e) { toast(e.message); }
+}
+
+async function deleteTemp() {
+  const t = state.editingTemp;
+  if (!t || !confirm("Diese Messung löschen?")) return;
+  try {
+    await api(`temperatures/${t.id}`, { method: "DELETE" });
+    $("#tempDialog").close();
+    toast("Gelöscht");
+    refreshViews();
+  } catch (e) { toast(e.message); }
+}
+
+/* ---------- Diagramm ---------- */
+function chartRange() {
+  if (state.chartHours === "custom") {
+    const f = $("#chartFrom").value, t = $("#chartTo").value;
+    if (!f || !t) return null;
+    const from = new Date(f + "T00:00:00"), to = new Date(t + "T23:59:59");
+    return to > from ? { from, to } : null;
+  }
+  const to = new Date();
+  return { from: new Date(to.getTime() - state.chartHours * 3600000), to };
+}
+
+async function loadChart() {
+  const box = $("#chartBox");
+  if (!state.childId) { box.innerHTML = `<div class="empty">Kein Kind ausgewählt.</div>`; $("#chartSummary").innerHTML = ""; return; }
+  const r = chartRange();
+  if (!r) { box.innerHTML = `<div class="empty">Bitte Von- und Bis-Datum wählen.</div>`; $("#chartSummary").innerHTML = ""; return; }
+  try {
+    state.chart = await api(`chart?child_id=${state.childId}&from=${encodeURIComponent(r.from.toISOString())}&to=${encodeURIComponent(r.to.toISOString())}`);
+  } catch (e) { toast(e.message); return; }
+  renderChart();
+}
+
+// Farbe folgt dem Wirkstoff (stabil, unabhängig vom Zeitraum)
+const SERIES = ["--s1", "--s2", "--s3", "--s4", "--s5", "--s6"];
+const FIXED_COLORS = { paracetamol: 0, ibuprofen: 1 };
+function ingredientColor(name) {
+  const key = (name || "").trim().toLowerCase();
+  if (key in FIXED_COLORS) return `var(${SERIES[FIXED_COLORS[key]]})`;
+  const others = [...new Set(state.meds.map((m) => m.active_ingredient.trim().toLowerCase()))]
+    .filter((k) => !(k in FIXED_COLORS)).sort();
+  const i = others.indexOf(key);
+  return `var(${SERIES[2 + ((i < 0 ? 0 : i) % (SERIES.length - 2))]})`;
+}
+
+function niceTicks(from, to, width) {
+  const span = to - from, H = 3600000;
+  const maxTicks = Math.max(2, Math.floor(width / 70));
+  const steps = [1, 2, 3, 6, 12, 24, 48, 72, 168, 336].map((h) => h * H);
+  const step = steps.find((s) => span / s <= maxTicks) || 720 * H;
+  const ticks = [];
+  const start = new Date(from);
+  if (step >= 24 * H) start.setHours(0, 0, 0, 0); else start.setMinutes(0, 0, 0);
+  for (let t = start.getTime(); t <= to; t += step) {
+    if (step < 24 * H) { const d = new Date(t); if (d.getHours() % (step / H)) continue; }
+    if (t >= from) ticks.push(t);
+    if (ticks.length > 60) break;
+  }
+  return { ticks, daily: step >= 24 * H };
+}
+
+function renderChart() {
+  const c = state.chart;
+  const box = $("#chartBox");
+  if (!c) return;
+  const from = new Date(c.from).getTime(), to = new Date(c.to).getTime();
+  const temps = c.temperatures.map((t) => ({ ...t, x: new Date(t.measured_at).getTime() }));
+  const doses = c.doses.map((d) => ({ ...d, x: new Date(d.given_at).getTime() }));
+  if (!temps.length && !doses.length) {
+    box.innerHTML = `<div class="empty">Keine Messungen oder Gaben in diesem Zeitraum.</div>`;
+    $("#chartSummary").innerHTML = "";
+    return;
+  }
+  const lanes = [...new Set(doses.map((d) => d.active_ingredient))];
+  const W = Math.max(300, box.clientWidth - 8);
+  const padL = 40, padR = 12, padT = 12;
+  const plotH = Math.round(Math.min(260, Math.max(180, W * 0.5)));
+  const laneH = 36, axisH = 30;
+  const H = padT + plotH + axisH + lanes.length * laneH + (lanes.length ? 6 : 0);
+  const plotW = W - padL - padR;
+  const xs = (t) => padL + ((t - from) / (to - from)) * plotW;
+
+  let lo = 36, hi = 40;
+  temps.forEach((t) => { lo = Math.min(lo, Math.floor(t.celsius)); hi = Math.max(hi, Math.ceil(t.celsius)); });
+  const ys = (v) => padT + plotH - ((v - lo) / (hi - lo)) * plotH;
+  const fever = c.fever_c || FEVER;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Temperaturverlauf mit Medikamentengaben">`;
+  // Fieberbereich + Gitter
+  svg += `<rect class="fever-band" x="${padL}" y="${ys(hi)}" width="${plotW}" height="${ys(fever) - ys(hi)}"/>`;
+  for (let v = lo; v <= hi; v += (hi - lo > 5 ? 1 : 0.5)) {
+    svg += `<line class="grid" x1="${padL}" x2="${W - padR}" y1="${ys(v)}" y2="${ys(v)}"/>`;
+    if (Number.isInteger(v)) svg += `<text x="${padL - 6}" y="${ys(v) + 4}" text-anchor="end">${v}°</text>`;
+  }
+  svg += `<line class="fever-line" x1="${padL}" x2="${W - padR}" y1="${ys(fever)}" y2="${ys(fever)}"/>`;
+  svg += `<text class="fever-label" x="${padL + 4}" y="${ys(fever) + 14}">Fieber ab ${fmtNum(fever)} °C</text>`;
+
+  // Zeitachse
+  const { ticks, daily } = niceTicks(from, to, plotW);
+  const axisY = padT + plotH;
+  const bottom = H - 2;
+  ticks.forEach((t) => {
+    const d = new Date(t), x = xs(t);
+    const midnight = d.getHours() === 0 && d.getMinutes() === 0;
+    svg += `<line class="grid" x1="${x}" x2="${x}" y1="${padT}" y2="${bottom}" ${midnight ? 'stroke-width="1.5"' : ""}/>`;
+    const lbl = daily || midnight
+      ? d.toLocaleDateString("de-CH", { weekday: "short", day: "2-digit", month: "2-digit" })
+      : d.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+    svg += `<text x="${x}" y="${axisY + 16}" text-anchor="middle">${esc(lbl)}</text>`;
+  });
+
+  // Temperaturkurve (Lücke bei > 12 h ohne Messung)
+  if (temps.length) {
+    let d = "", prev = null;
+    temps.forEach((t) => {
+      d += `${!prev || t.x - prev.x > 12 * 3600000 ? "M" : "L"}${xs(t.x).toFixed(1)},${ys(t.celsius).toFixed(1)}`;
+      prev = t;
+    });
+    svg += `<path class="temp-path" d="${d}"/>`;
+    temps.forEach((t, i) => {
+      svg += `<circle class="temp-dot" cx="${xs(t.x).toFixed(1)}" cy="${ys(t.celsius).toFixed(1)}" r="4" data-t="${i}"/>`;
+    });
+    // Höchstwert direkt beschriften
+    const max = temps.reduce((a, b) => (b.celsius > a.celsius ? b : a));
+    const mx = Math.min(Math.max(xs(max.x), padL + 20), W - padR - 20);
+    svg += `<text x="${mx}" y="${Math.max(ys(max.celsius) - 9, 10)}" text-anchor="middle" class="lane-label">${fmtNum(max.celsius)}°</text>`;
+  }
+
+  // Gaben-Spuren pro Wirkstoff
+  lanes.forEach((ing, li) => {
+    const top = axisY + axisH + li * laneH;
+    const col = ingredientColor(ing);
+    const y = top + 24;
+    svg += `<text class="lane-label" x="${padL + 2}" y="${top + 10}">${esc(ing)}</text>`;
+    svg += `<line class="grid" x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}"/>`;
+    doses.forEach((d, di) => {
+      if (d.active_ingredient !== ing) return;
+      const x = xs(d.x);
+      // dünne Hilfslinie hoch in die Temperaturkurve
+      svg += `<line x1="${x}" x2="${x}" y1="${padT}" y2="${axisY}" stroke="${col}" stroke-opacity=".35" stroke-width="1"/>`;
+      svg += `<circle cx="${x}" cy="${y}" r="5" fill="${col}" stroke="var(--card)" stroke-width="2" data-d="${di}"/>`;
+    });
+  });
+  svg += `<line class="cross" id="chartCross" x1="0" x2="0" y1="${padT}" y2="${bottom}" visibility="hidden"/>`;
+  svg += `<rect id="chartHit" x="${padL}" y="0" width="${plotW}" height="${H}" fill="transparent"/>`;
+  svg += `</svg>`;
+  box.innerHTML = svg;
+
+  // Hover/Tap: nächster Punkt (Messung oder Gabe) zur Zeigerposition
+  const svgEl = box.querySelector("svg");
+  const tip = $("#chartTip"), cross = svgEl.querySelector("#chartCross");
+  const points = [
+    ...temps.map((t) => ({ x: xs(t.x), y: ys(t.celsius), html: `<b>${fmtNum(t.celsius)} °C</b>${t.method ? " · " + esc(t.method) : ""}<br>${esc(fmtTime(t.measured_at))}${t.note ? "<br>" + esc(t.note) : ""}` })),
+    ...doses.map((d) => ({ x: xs(d.x), y: null, html: `<b>${esc(d.medication_name)}</b><br>${fmtNum(d.amount)} ${esc(d.unit)}${d.mg != null ? ` (${fmtNum(d.mg)} mg)` : ""}<br>${esc(fmtTime(d.given_at))}` })),
+  ];
+  const show = (ev) => {
+    const rect = svgEl.getBoundingClientRect();
+    const px = ((ev.clientX - rect.left) / rect.width) * W;
+    let best = null, bd = Infinity;
+    points.forEach((p) => { const dist = Math.abs(p.x - px); if (dist < bd) { bd = dist; best = p; } });
+    if (!best || bd > 24) { hide(); return; }
+    cross.setAttribute("x1", best.x); cross.setAttribute("x2", best.x); cross.setAttribute("visibility", "visible");
+    tip.innerHTML = best.html;
+    tip.hidden = false;
+    const tx = rect.left + (best.x / W) * rect.width;
+    const tw = tip.offsetWidth;
+    tip.style.left = `${Math.min(Math.max(8, tx - tw / 2), window.innerWidth - tw - 8)}px`;
+    tip.style.top = `${Math.max(8, rect.top + 4 - tip.offsetHeight)}px`;
+  };
+  const hide = () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); };
+  svgEl.addEventListener("pointermove", show);
+  svgEl.addEventListener("pointerdown", show);
+  svgEl.addEventListener("pointerleave", hide);
+
+  // Zusammenfassung + Legende
+  const parts = [];
+  if (temps.length) {
+    const vals = temps.map((t) => t.celsius);
+    const feverCount = vals.filter((v) => v >= fever).length;
+    parts.push(`<div><b>Temperatur:</b> ${temps.length} Messung(en) · max. ${fmtNum(Math.max(...vals))} °C · min. ${fmtNum(Math.min(...vals))} °C · ${feverCount}× ≥ ${fmtNum(fever)} °C</div>`);
+  }
+  const counts = {};
+  doses.forEach((d) => { counts[d.active_ingredient] = (counts[d.active_ingredient] || 0) + 1; });
+  const legend = [];
+  if (temps.length) legend.push(`<span><span class="sw line" style="background:var(--temp)"></span>Temperatur</span>`);
+  lanes.forEach((ing) => legend.push(`<span><span class="sw" style="background:${ingredientColor(ing)}"></span>${esc(ing)}: ${counts[ing]}×</span>`));
+  parts.push(`<div class="legend">${legend.join("")}</div>`);
+  parts.push(`<p class="muted small">Tippe auf einen Punkt für Details. Fiebergrenze rektal/Ohr 38.0 °C; unter der Achsel gemessen liegt der Wert meist etwas tiefer.</p>`);
+  $("#chartSummary").innerHTML = parts.join("");
 }
 
 /* ---------- Medikamente ---------- */
@@ -471,8 +752,7 @@ async function deleteDose() {
     await api(`doses/${d.id}`, { method: "DELETE" });
     $("#doseDialog").close();
     toast("Gelöscht");
-    loadStatus();
-    if (state.view === "history") loadHistory();
+    refreshViews();
   } catch (e) { toast(e.message); }
 }
 
@@ -495,8 +775,7 @@ async function saveDose(ev) {
     else await api("doses", { method: "POST", body });
     $("#doseDialog").close();
     toast(state.editingDose ? "Änderung gespeichert" : "Gabe gespeichert");
-    loadStatus();
-    if (state.view === "history") loadHistory();
+    refreshViews();
   } catch (e) {
     if (e.status === 409 && e.data?.warnings) {
       const w = $("#doseWarnings");
@@ -518,6 +797,21 @@ function bind() {
   document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
   $("#btnAddDose").addEventListener("click", () => openDoseDialog());
   $("#btnAddMed").addEventListener("click", () => openMedDialog());
+  $("#btnAddTemp").addEventListener("click", () => openTempDialog());
+  $("#tempForm").addEventListener("submit", saveTemp);
+  $("#tempDelete").addEventListener("click", deleteTemp);
+  const today = toLocalInput(new Date()).slice(0, 10);
+  $("#chartTo").value = today;
+  $("#chartFrom").value = toLocalInput(new Date(Date.now() - 6 * 86400000)).slice(0, 10);
+  document.querySelectorAll("#chartRanges button").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll("#chartRanges button").forEach((x) => x.classList.toggle("active", x === b));
+    state.chartHours = b.dataset.hours === "custom" ? "custom" : Number(b.dataset.hours);
+    $("#chartCustom").hidden = state.chartHours !== "custom";
+    loadChart();
+  }));
+  ["#chartFrom", "#chartTo"].forEach((s) => $(s).addEventListener("change", loadChart));
+  let rt;
+  window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (state.view === "chart") renderChart(); }, 150); });
   $("#btnAddChild").addEventListener("click", () => openChildDialog());
   $("#medSearch").addEventListener("input", renderMedList);
   $("#doseMedFilter").addEventListener("input", () => { fillDoseMedSelect(Number($("#doseMed").value)); onDoseMedChange(); });
@@ -538,7 +832,7 @@ async function init() {
   } catch (e) { toast("Laden fehlgeschlagen: " + e.message); }
   let view = "status";
   try { view = localStorage.getItem("meditrack.view") || "status"; } catch (_) { /* ignorieren */ }
-  showView(["status", "history", "meds", "children"].includes(view) ? view : "status");
+  showView(["status", "history", "chart", "meds", "children"].includes(view) ? view : "status");
   setInterval(() => { if (state.view === "status") renderStatus(); }, 30000);
   setInterval(() => { if (state.view === "status" && !document.hidden) loadStatus(); }, 120000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden && state.view === "status") loadStatus(); });

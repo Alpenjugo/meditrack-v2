@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+- Temperatur separat erfassen (°C, Messart, Zeitpunkt, Notiz); bearbeiten und löschen.
+- Letzte Temperatur auf der Übersicht; Messungen erscheinen im Verlauf.
+- Neue Ansicht «Diagramm»: Temperaturkurve mit Fiebergrenze und Gaben pro Wirkstoff,
+  Zeitraum 24 h / 3 / 7 / 30 Tage oder frei wählbar.
+- Neuer Sensor `sensor.meditrack_<kind>_temperatur`; Temperaturen im JSON-Export.
+
 ## 1.1.1
 - Neu: «Algifor Junior Suspension 100 mg/5 ml» (Ibuprofen 20 mg/ml) als Favorit.
 - Generischer Eintrag heisst wieder «Ibuprofen Suspension 20 mg/ml» (kein Favorit).

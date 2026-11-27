@@ -14,12 +14,13 @@ import logging
 import mimetypes
 import os
 import re
+from datetime import timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from core import Store, ValidationError, suggested_dose, to_iso, utcnow
+from core import Store, ValidationError, parse_iso, suggested_dose, to_iso, utcnow
 from ha import Publisher
 
 log = logging.getLogger("meditrack")
@@ -204,6 +205,32 @@ def make_handler(app: App):
                 else:
                     result = (405, {"error": "Methode nicht erlaubt"})
 
+            elif res == "temperatures":
+                if method == "GET" and rid is None:
+                    child_id = self._int(query.get("child_id"))
+                    limit = min(self._int(query.get("limit")) or 300, 5000)
+                    return self._send(200, store.list_temperatures(child_id, limit=limit))
+                if method == "POST" and rid is None:
+                    changed = True
+                    result = (201, store.add_temperature(self._json_body()))
+                elif method == "PUT" and rid:
+                    temp = store.update_temperature(rid, self._json_body())
+                    changed = True
+                    result = (200, temp) if temp else (404, {"error": "Messung nicht gefunden"})
+                elif method == "DELETE" and rid:
+                    changed = True
+                    result = (204, None) if store.delete_temperature(rid) else (404, {"error": "Messung nicht gefunden"})
+                else:
+                    result = (405, {"error": "Methode nicht erlaubt"})
+
+            elif res == "chart" and method == "GET":
+                child_id = self._int(query.get("child_id"))
+                if not store.get_child(child_id):
+                    return self._send(404, {"error": "Kind nicht gefunden"})
+                end = parse_iso(query["to"]) if query.get("to") else utcnow()
+                start = parse_iso(query["from"]) if query.get("from") else end - timedelta(hours=72)
+                return self._send(200, store.chart(child_id, start, end))
+
             elif res == "check" and method == "POST":
                 warnings, (child, med, *_rest) = store.check_dose(self._json_body())
                 return self._send(200, {"warnings": warnings,
@@ -234,6 +261,8 @@ def make_handler(app: App):
                     "medications": store.list_medications(include_archived=True),
                     "doses": [d for c in store.list_children()
                               for d in store.list_doses(c["id"], limit=1_000_000)],
+                    "temperatures": [t for c in store.list_children()
+                                     for t in store.list_temperatures(c["id"], limit=1_000_000)],
                 }
                 return self._send(200, data, extra_headers={
                     "Content-Disposition": 'attachment; filename="meditrack-export.json"'})

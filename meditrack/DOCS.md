@@ -14,8 +14,13 @@ Erfasse, wann du deinem Kind welches Medikament gegeben hast – mit Sperrzeit
 5. **Schnellauswahl**: Favoriten (★) und die 5 zuletzt verwendeten Medikamente
    erscheinen als Knöpfe auf der Übersicht und im Erfassen-Dialog. Favorit setzen:
    Medikamente → Medikament öffnen → «★ Favorit».
-6. **Verlauf** → Eintrag antippen, um eine Gabe zu bearbeiten oder zu löschen.
-7. **Medikamente** → Vorlagen anpassen oder eigene hinzufügen.
+6. **Temperatur** → «🌡 Temperatur» auf der Übersicht: Wert in °C, Messart (Ohr, Stirn,
+   rektal, Achsel, Mund), Zeitpunkt. Die letzte Messung steht oben auf der Übersicht.
+7. **Verlauf** → Gaben und Messungen chronologisch; Eintrag antippen zum Bearbeiten oder Löschen.
+8. **Diagramm** → Temperaturkurve mit den Gaben darunter (eine Spur pro Wirkstoff).
+   Zeitraum: 24 h, 3 Tage, 7 Tage, 30 Tage oder eigenes Von–Bis-Datum. Punkt antippen
+   zeigt Details. Gestrichelte Linie = Fiebergrenze 38.0 °C.
+9. **Medikamente** → Vorlagen anpassen oder eigene hinzufügen.
 
 ## Felder eines Medikaments
 | Feld | Bedeutung |
@@ -31,6 +36,7 @@ Erfasse, wann du deinem Kind welches Medikament gegeben hast – mit Sperrzeit
 - `publish_sensors` (Standard `true`): veröffentlicht Sensoren in Home Assistant:
   - `sensor.meditrack_<kind>_letzte_gabe` – Zeitpunkt der letzten Gabe
   - `sensor.meditrack_<kind>_<wirkstoff>` – Zeitpunkt der nächsten möglichen Gabe
+  - `sensor.meditrack_<kind>_temperatur` – zuletzt gemessene Temperatur in °C
     (Attribut `allowed_now`)
 - `log_level`: debug | info | warning | error
 
