@@ -7,12 +7,12 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
-from datetime import timedelta
+from datetime import datetime, timedelta
 from http.server import ThreadingHTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "meditrack", "app"))
 
-from core import Store, ValidationError, compute_status, suggested_dose, to_iso, utcnow  # noqa: E402
+from core import Store, ValidationError, ceil_to_minutes, compute_status, suggested_dose, to_iso, utcnow  # noqa: E402
 from ha import slugify  # noqa: E402
 from seed import PRESET_MEDICATIONS  # noqa: E402
 import server  # noqa: E402
@@ -112,7 +112,25 @@ class StoreTests(unittest.TestCase):
         # Intervall wäre seit 3 h vorbei, aber 3/3 Gaben -> frei erst nach 23h-Gabe + 24 h
         self.assertFalse(st["allowed_now"])
         self.assertEqual(st["blocked_reason"], "max_doses")
-        self.assertEqual(st["next_allowed_at"], to_iso(now + timedelta(hours=1)))
+        self.assertEqual(st["next_allowed_at"], to_iso(ceil_to_minutes(now + timedelta(hours=1))))
+
+    def test_ceil_to_15_minutes(self):
+        from datetime import datetime, timezone
+        t = lambda h, m, sec=0: datetime(2026, 1, 1, h, m, sec, tzinfo=timezone.utc)
+        self.assertEqual(ceil_to_minutes(t(13, 43)), t(13, 45))
+        self.assertEqual(ceil_to_minutes(t(13, 45)), t(13, 45))
+        self.assertEqual(ceil_to_minutes(t(13, 45, 1)), t(14, 0))
+        self.assertEqual(ceil_to_minutes(t(23, 58)), datetime(2026, 1, 2, 0, 0, tzinfo=timezone.utc))
+
+    def test_status_rounded_never_earlier(self):
+        self.dose(self.para_syrup, 6, hours_ago=2)
+        st = self.store.status(self.child["id"])["ingredients"][0]
+        nxt = datetime.fromisoformat(st["next_allowed_at"])
+        self.assertEqual(nxt.minute % 15, 0)
+        self.assertEqual(nxt.second, 0)
+        exact = datetime.fromisoformat(self.store.list_doses(self.child["id"])[0]["given_at"]) + timedelta(hours=6)
+        self.assertGreaterEqual(nxt, exact)
+        self.assertLess(nxt - exact, timedelta(minutes=15))
 
     def test_validation(self):
         with self.assertRaises(ValidationError):

@@ -62,6 +62,13 @@ function toLocalInput(date) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
+function roundToQuarter(date) {
+  // nächstgelegene Viertelstunde, aber nie in der Zukunft (Server lehnt > 5 min ab)
+  const q = 15 * 60000;
+  let t = Math.round(date.getTime() / q) * q;
+  if (t > Date.now() + 4 * 60000) t -= q;
+  return new Date(t);
+}
 function ageText(birthdate) {
   if (!birthdate) return "";
   const b = new Date(birthdate + "T00:00:00");
@@ -388,7 +395,7 @@ async function openDoseDialog(medId = null) {
   $("#doseForm").reset();
   $("#doseMedFilter").value = "";
   fillDoseMedSelect(medId);
-  $("#doseTime").value = toLocalInput(new Date());
+  $("#doseTime").value = toLocalInput(roundToQuarter(new Date()));
   resetDoseWarnings();
   $("#doseDialog").showModal();
   await onDoseMedChange();

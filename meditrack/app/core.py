@@ -391,6 +391,19 @@ def suggested_dose(child, med):
     return {"mg": round(mg, 1), "amount": round(amount, 1) if amount else None}
 
 
+ROUND_MINUTES = 15
+
+
+def ceil_to_minutes(dt: datetime, minutes: int = ROUND_MINUTES) -> datetime:
+    """Rundet auf das nächste Vielfache von `minutes` auf (nie früher als dt)."""
+    step = minutes * 60
+    ts = dt.timestamp()
+    rounded = -(-int(ts) // step) * step
+    if rounded < ts:
+        rounded += step
+    return datetime.fromtimestamp(rounded, tz=timezone.utc)
+
+
 def _fmt_hours(hours: float) -> str:
     total_min = max(0, int(round(hours * 60)))
     h, m = divmod(total_min, 60)
@@ -491,6 +504,9 @@ def compute_status(child, doses, now):
             free_at = oldest + timedelta(hours=24)
             if free_at > next_allowed:
                 next_allowed, reason = free_at, "max_doses"
+
+        # Anzeige auf 15 min aufrunden – nie früher als der echte Mindestabstand
+        next_allowed = ceil_to_minutes(next_allowed)
 
         mg_24h = sum(d["mg"] or 0 for d in window)
         limit = max_mg_day(child, last)
