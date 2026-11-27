@@ -1,10 +1,14 @@
 # Changelog
 
+## 1.1.1
+- Neu: «Algifor Junior Suspension 100 mg/5 ml» (Ibuprofen 20 mg/ml) als Favorit.
+- Generischer Eintrag heisst wieder «Ibuprofen Suspension 20 mg/ml» (kein Favorit).
+- Bestehende Installationen: Vorlagen werden umbenannt, erfasste Gaben bleiben zugeordnet.
+
 ## 1.1.0
 - Gaben bearbeiten und löschen (im Verlauf auf einen Eintrag tippen); Sperrzeiten werden neu geprüft.
 - Schnellauswahl auf Übersicht und im Erfassen-Dialog: Favoriten (★) und die 5 zuletzt verwendeten Medikamente.
 - Neue Vorlagen: Dafalgan Zäpfchen 150 mg, Nasivin Kinder Spray 0.025 % (Oxymetazolin).
-  Ibuprofen-Sirup heisst neu «Algifor Junior Suspension 20 mg/ml».
   Bestehende Installationen erhalten die neuen Vorlagen automatisch, eigene Änderungen bleiben erhalten.
 - Favorit pro Medikament einstellbar; Favoriten stehen in Listen zuoberst.
 - Zäpfchen: Dosisinfo zeigt «1 Stück = 150 mg (12 mg/kg)» statt Bruchteilen.

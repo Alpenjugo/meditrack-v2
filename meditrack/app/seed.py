@@ -16,7 +16,7 @@ Felder:
 """
 
 # Bei neuen/geänderten Vorlagen erhöhen; neue Einträge mit "added_in" markieren.
-SEED_VERSION = 2
+SEED_VERSION = 3
 
 CHECK = "Werte vor Gebrauch mit Packungsbeilage bzw. Kinderarzt abgleichen."
 
@@ -48,12 +48,20 @@ PRESET_MEDICATIONS = [
         "notes": f"Zäpfchenstärke passend zum Gewicht wählen. {CHECK}",
     },
     {
-        "name": "Algifor Junior Suspension 20 mg/ml",
+        "name": "Algifor Junior Suspension 100 mg/5 ml",
         "favorite": True,
         "active_ingredient": "Ibuprofen",
         "form": "Suspension", "route": "oral", "dose_unit": "ml",
         "mg_per_unit": 20, "dose_mg_per_kg": 10, "max_single_mg": 400,
-        "min_interval_hours": 6, "max_doses_per_24h": 3, "max_mg_per_kg_day": 30,
+        "min_interval_hours": 6, "max_doses_per_24h": 3, "max_mg_per_kg_day": 30, "added_in": 3,
+        "notes": f"Fieber/Schmerzen. Mit etwas Nahrung geben. Nicht bei Dehydratation. {CHECK}",
+    },
+    {
+        "name": "Ibuprofen Suspension 20 mg/ml",
+        "active_ingredient": "Ibuprofen",
+        "form": "Suspension", "route": "oral", "dose_unit": "ml",
+        "mg_per_unit": 20, "dose_mg_per_kg": 10, "max_single_mg": 400,
+        "min_interval_hours": 6, "max_doses_per_24h": 3, "max_mg_per_kg_day": 30, "added_in": 3,
         "notes": f"Fieber/Schmerzen. Mit etwas Nahrung geben. Nicht bei Dehydratation. {CHECK}",
     },
     {
@@ -167,4 +175,10 @@ PRESET_MEDICATIONS = [
 
 # Favoriten, die bei bestehenden Installationen (Seed-Version 1) gesetzt werden
 FAVORITES_V2 = ["Dafalgan Zäpfchen 150 mg", "Nasivin Kinder Spray 0.025 %"]
-LEGACY_FAVORITES = ["Ibuprofen Suspension 20 mg/ml (z. B. Algifor Junior)"]
+
+# Umbenennungen von Vorlagen (alter Name -> neuer Name, Favorit), angewendet bei Seed-Version < 3.
+# Nur unveränderte Vorlagen (is_preset=1) und nur, wenn der neue Name noch frei ist.
+RENAMES_V3 = [
+    ("Algifor Junior Suspension 20 mg/ml", "Algifor Junior Suspension 100 mg/5 ml", 1),
+    ("Ibuprofen Suspension 20 mg/ml (z. B. Algifor Junior)", "Ibuprofen Suspension 20 mg/ml", 0),
+]

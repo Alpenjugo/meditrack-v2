@@ -31,6 +31,7 @@ class StoreTests(unittest.TestCase):
         self.para_syrup = med_by(self.store, "Paracetamol Sirup")
         self.para_supp = med_by(self.store, "Paracetamol Zäpfchen 125")
         self.ibu = med_by(self.store, "Algifor Junior")
+        self.assertEqual(self.ibu["mg_per_unit"], 20)  # 100 mg / 5 ml
 
     def tearDown(self):
         self.store.conn.close()
@@ -180,7 +181,7 @@ class StoreTests(unittest.TestCase):
 
     def test_favorites_and_recent(self):
         favs = {m["name"] for m in self.store.list_medications() if m["favorite"]}
-        self.assertEqual(favs, {"Algifor Junior Suspension 20 mg/ml", "Dafalgan Zäpfchen 150 mg",
+        self.assertEqual(favs, {"Algifor Junior Suspension 100 mg/5 ml", "Dafalgan Zäpfchen 150 mg",
                                 "Nasivin Kinder Spray 0.025 %"})
         self.assertTrue(self.store.list_medications()[0]["favorite"])  # Favoriten zuerst
         meds = self.store.list_medications()
@@ -206,12 +207,33 @@ class StoreTests(unittest.TestCase):
         conn.commit(); conn.close()
         st = Store(path)
         names = {m["name"]: m for m in st.list_medications()}
-        self.assertEqual(names["Ibuprofen Suspension 20 mg/ml (z. B. Algifor Junior)"]["favorite"], 1)
+        # alte Vorlage umbenannt (ID bleibt -> Verlauf bleibt zugeordnet), kein Favorit
+        self.assertEqual(names["Ibuprofen Suspension 20 mg/ml"]["id"], 1)
+        self.assertEqual(names["Ibuprofen Suspension 20 mg/ml"]["favorite"], 0)
+        self.assertEqual(names["Algifor Junior Suspension 100 mg/5 ml"]["favorite"], 1)
         self.assertEqual(names["Nasivin Kinder Spray 0.025 %"]["favorite"], 1)
         self.assertEqual(names["Dafalgan Zäpfchen 150 mg"]["favorite"], 1)
-        self.assertNotIn("Algifor Junior Suspension 20 mg/ml", names)  # alte Vorlagen nicht doppelt
         Store(path)  # idempotent
-        self.assertEqual(len(st.list_medications()), 3)
+        self.assertEqual(len(st.list_medications()), 4)  # Ibuprofen (umbenannt), Algifor, Dafalgan, Nasivin
+        st.conn.close()
+
+    def test_migration_from_seed_v2(self):
+        import sqlite3
+        path = os.path.join(self.tmp.name, "v2.db")
+        conn = sqlite3.connect(path)
+        conn.executescript(core.SCHEMA)
+        conn.execute("INSERT INTO medications(name, active_ingredient, dose_unit, mg_per_unit, "
+                     "min_interval_hours, is_preset, favorite) "
+                     "VALUES('Algifor Junior Suspension 20 mg/ml', 'Ibuprofen', 'ml', 20, 6, 1, 1)")
+        conn.execute("INSERT INTO meta(key, value) VALUES('seed_version', '2')")
+        conn.commit(); conn.close()
+        st = Store(path)
+        names = {m["name"]: m for m in st.list_medications()}
+        self.assertEqual(names["Algifor Junior Suspension 100 mg/5 ml"]["id"], 1)
+        self.assertEqual(names["Algifor Junior Suspension 100 mg/5 ml"]["favorite"], 1)
+        self.assertEqual(names["Ibuprofen Suspension 20 mg/ml"]["favorite"], 0)
+        self.assertNotIn("Algifor Junior Suspension 20 mg/ml", names)
+        self.assertEqual(len(names), 2)
         st.conn.close()
 
     def test_slugify(self):

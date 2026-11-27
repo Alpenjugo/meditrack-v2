@@ -9,7 +9,7 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
 
-from seed import FAVORITES_V2, LEGACY_FAVORITES, PRESET_MEDICATIONS, SEED_VERSION
+from seed import FAVORITES_V2, PRESET_MEDICATIONS, RENAMES_V3, SEED_VERSION
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS children (
@@ -162,12 +162,19 @@ class Store:
             version = int(row["value"]) if row else (1 if seeded else 0)
             if version >= SEED_VERSION:
                 return
+            if 0 < version < 3:
+                # Umbenennen statt neu anlegen: erfasste Gaben bleiben zugeordnet
+                for old, new, fav in RENAMES_V3:
+                    self.conn.execute(
+                        "UPDATE medications SET name=?, favorite=? WHERE name=? AND is_preset=1 "
+                        "AND NOT EXISTS (SELECT 1 FROM medications WHERE name=?)",
+                        (new, fav, old, new))
             existing = {r["name"] for r in self.conn.execute("SELECT name FROM medications")}
             for med in PRESET_MEDICATIONS:
                 if med.get("added_in", 1) > version and med["name"] not in existing:
                     self._insert_med(med, is_preset=1)
             if 0 < version < 2:
-                for name in FAVORITES_V2 + LEGACY_FAVORITES:
+                for name in FAVORITES_V2:
                     self.conn.execute(
                         "UPDATE medications SET favorite=1 WHERE name=?", (name,))
             self.conn.execute(
