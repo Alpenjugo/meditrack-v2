@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="de-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>MediTrack</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>💊 MediTrack</h1>
+    <div id="childTabs" class="child-tabs" role="tablist"></div>
+  </header>
+
+  <main>
+    <!-- Übersicht -->
+    <section id="view-status" class="view active">
+      <button id="btnAddDose" class="btn primary big">+ Gabe erfassen</button>
+      <div id="statusList" class="cards"></div>
+      <p class="disclaimer">Hinweis: Sperrzeiten und Höchstmengen sind hinterlegte Richtwerte.
+        Massgebend sind Packungsbeilage und ärztliche Verordnung.</p>
+    </section>
+
+    <!-- Verlauf -->
+    <section id="view-history" class="view">
+      <h2>Verlauf</h2>
+      <div id="historyList" class="list"></div>
+    </section>
+
+    <!-- Medikamente -->
+    <section id="view-meds" class="view">
+      <div class="row-between">
+        <h2>Medikamente</h2>
+        <button id="btnAddMed" class="btn primary">+ Neu</button>
+      </div>
+      <input id="medSearch" type="search" placeholder="Suchen (Name oder Wirkstoff)…" class="search">
+      <div id="medList" class="list"></div>
+    </section>
+
+    <!-- Kinder -->
+    <section id="view-children" class="view">
+      <div class="row-between">
+        <h2>Kinder</h2>
+        <button id="btnAddChild" class="btn primary">+ Kind</button>
+      </div>
+      <p class="muted">Das Gewicht wird für den Dosisvorschlag und die Tageshöchstmenge (mg/kg) verwendet – bitte aktuell halten.</p>
+      <div id="childList" class="list"></div>
+      <p><a href="api/export" class="btn ghost" download>Daten exportieren (JSON)</a></p>
+    </section>
+  </main>
+
+  <nav class="bottom">
+    <button data-view="status" class="active">🏠<span>Übersicht</span></button>
+    <button data-view="history">🕘<span>Verlauf</span></button>
+    <button data-view="meds">💊<span>Medikamente</span></button>
+    <button data-view="children">👶<span>Kinder</span></button>
+  </nav>
+
+  <!-- Dialog: Gabe erfassen -->
+  <dialog id="doseDialog">
+    <form id="doseForm" method="dialog">
+      <h3>Gabe erfassen</h3>
+      <label>Medikament
+        <input id="doseMedFilter" type="search" placeholder="Filtern…" autocomplete="off">
+        <select id="doseMed" required size="6"></select>
+      </label>
+      <div id="doseMedInfo" class="info"></div>
+      <div class="grid2">
+        <label>Menge
+          <div class="with-unit"><input id="doseAmount" type="number" step="any" min="0" inputmode="decimal" required><span id="doseUnit"></span></div>
+        </label>
+        <label>Zeitpunkt
+          <input id="doseTime" type="datetime-local" required>
+        </label>
+      </div>
+      <label>Notiz <input id="doseNote" type="text" maxlength="500" placeholder="z. B. Fieber 39.2 °C"></label>
+      <div id="doseWarnings" class="warnings" hidden></div>
+      <div class="actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" id="doseSubmit" class="btn primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Dialog: Medikament -->
+  <dialog id="medDialog">
+    <form id="medForm" method="dialog">
+      <h3 id="medDialogTitle">Medikament</h3>
+      <label>Name / Produkt * <input name="name" required maxlength="120" placeholder="z. B. Dafalgan Sirup 30 mg/ml"></label>
+      <label>Wirkstoff * <input name="active_ingredient" required maxlength="120" list="ingredientList" placeholder="z. B. Paracetamol"></label>
+      <datalist id="ingredientList"></datalist>
+      <div class="grid2">
+        <label>Darreichungsform
+          <input name="form" list="formList" maxlength="120" placeholder="Sirup, Zäpfchen…">
+        </label>
+        <label>Art der Einnahme
+          <select name="route">
+            <option value="oral">oral (Mund)</option>
+            <option value="rektal">rektal (Zäpfchen)</option>
+            <option value="nasal">nasal (Nase)</option>
+            <option value="inhalativ">inhalativ</option>
+            <option value="äusserlich">äusserlich (Haut)</option>
+            <option value="Augen">Augen</option>
+            <option value="Ohren">Ohren</option>
+            <option value="andere">andere</option>
+          </select>
+        </label>
+      </div>
+      <datalist id="formList">
+        <option value="Sirup"><option value="Suspension"><option value="Tropfen"><option value="Zäpfchen">
+        <option value="Tablette"><option value="Kapsel"><option value="Granulat"><option value="Nasenspray">
+        <option value="Salbe"><option value="Inhalation"><option value="Lösung">
+      </datalist>
+      <fieldset>
+        <legend>Dosierung</legend>
+        <div class="grid2">
+          <label>Einheit * <input name="dose_unit" required list="unitList" maxlength="30" value="ml"></label>
+          <label>mg Wirkstoff pro Einheit <input name="mg_per_unit" type="number" step="any" min="0" placeholder="z. B. 30"></label>
+          <label>Standardmenge pro Gabe <input name="default_dose" type="number" step="any" min="0"></label>
+          <label>mg pro kg (Einzeldosis) <input name="dose_mg_per_kg" type="number" step="any" min="0" placeholder="z. B. 15"></label>
+          <label>Max. Einzeldosis (mg) <input name="max_single_mg" type="number" step="any" min="0"></label>
+        </div>
+      </fieldset>
+      <datalist id="unitList">
+        <option value="ml"><option value="Tropfen"><option value="Stück"><option value="Sprühstoss">
+        <option value="Hub"><option value="mg"><option value="Anwendung"><option value="Beutel">
+      </datalist>
+      <fieldset>
+        <legend>Sperrzeit &amp; Tageslimit</legend>
+        <div class="grid2">
+          <label>Wieder geben frühestens nach (h) * <input name="min_interval_hours" type="number" step="any" min="0" max="168" required value="6"></label>
+          <label>Max. Gaben pro 24 h <input name="max_doses_per_24h" type="number" step="1" min="0"></label>
+          <label>Max. mg/kg pro Tag <input name="max_mg_per_kg_day" type="number" step="any" min="0"></label>
+        </div>
+      </fieldset>
+      <label>Notizen <textarea name="notes" rows="3" maxlength="2000"></textarea></label>
+      <p class="muted small">Sperrzeit und Tageslimit gelten pro <b>Wirkstoff</b> – also über alle Produkte mit demselben Wirkstoff hinweg.</p>
+      <div class="actions">
+        <button type="button" class="btn danger" id="medDelete" hidden>Löschen</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Dialog: Kind -->
+  <dialog id="childDialog">
+    <form id="childForm" method="dialog">
+      <h3 id="childDialogTitle">Kind</h3>
+      <label>Name * <input name="name" required maxlength="60"></label>
+      <div class="grid2">
+        <label>Geburtsdatum <input name="birthdate" type="date"></label>
+        <label>Gewicht (kg) <input name="weight_kg" type="number" step="0.1" min="0.5" max="150" inputmode="decimal"></label>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn danger" id="childDelete" hidden>Löschen</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <button type="submit" class="btn primary">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
