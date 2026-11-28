@@ -12,7 +12,7 @@ Erfasse, wann du deinem Kind welches Medikament gegeben hast – mit Sperrzeit
 4. Wird zu früh oder zu viel erfasst, erscheint eine Warnung. Speichern ist nur
    mit «Trotzdem speichern» möglich (z. B. bei ärztlicher Anweisung).
 5. **Schnellauswahl**: Favoriten (Stern) und die 5 zuletzt verwendeten Medikamente
-   erscheinen als Knöpfe auf der Übersicht und im Erfassen-Dialog. Favorit setzen:
+   erscheinen als Knöpfe im Dialog «Gabe erfassen». Favorit setzen:
    Medikamente → Medikament öffnen → «Favorit».
 6. **Temperatur** → «Temperatur» auf der Übersicht: Wert in °C, Messart (Ohr, Stirn,
    rektal, Achsel, Mund), Zeitpunkt. Die letzte Messung steht oben auf der Übersicht.

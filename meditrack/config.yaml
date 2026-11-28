@@ -1,5 +1,5 @@
 name: MediTrack
-version: "1.4.1"
+version: "1.4.2"
 slug: meditrack
 description: Medikamentengaben für Kinder erfassen – mit Sperrzeiten, Tageslimits und Medikamenten-Datenbank.
 url: https://github.com/alpenjugo/meditrack-v2

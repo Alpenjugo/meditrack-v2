@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.4.2
+- Übersicht aufgeräumt: Favoriten und «Zuletzt verwendet» erscheinen nur noch im Dialog «Gabe erfassen».
+
 ## 1.4.1
 - Übersicht: Antippen der letzten Temperatur öffnet den Verlauf und hebt die Messung hervor
   (dort bearbeiten), statt direkt den Bearbeiten-Dialog.

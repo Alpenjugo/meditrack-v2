@@ -381,7 +381,6 @@ function renderLastTemp() {
 }
 
 function renderStatus() {
-  renderQuick($("#quickPicks"), (id) => openDoseDialog(id));
   const el = $("#statusList");
   $("#btnAddDose").disabled = !state.childId;
   $("#btnAddTemp").disabled = !state.childId;
