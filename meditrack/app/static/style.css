@@ -303,3 +303,4 @@ nav.bottom button.active { color: var(--primary); font-weight: 600; }
 .data-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 #importSummary ul { padding-left: 20px; }
 .chart-tip hr { border: 0; border-top: 1px solid currentColor; opacity: .25; margin: 5px 0; }
+.item.flash { outline: 2px solid var(--primary); outline-offset: 1px; transition: outline-color .3s; }

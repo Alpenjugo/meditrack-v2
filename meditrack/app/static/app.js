@@ -376,7 +376,8 @@ function renderLastTemp() {
     <span><span class="val">${fmtNum(t.celsius)} °C</span><br>
     <span class="muted small">${fmtTime(t.measured_at)} · vor ${fmtDuration(age)}${t.method ? " · " + esc(t.method) : ""}</span></span>
     <span class="chev">${icon("chevron")}</span></button>`;
-  el.firstElementChild.addEventListener("click", () => openTempDialog(t));
+  // Antippen führt in den Verlauf zur Messung; dort kann sie bearbeitet werden
+  el.firstElementChild.addEventListener("click", () => { state.focusTemp = t.id; showView("history"); });
 }
 
 function renderStatus() {
@@ -494,6 +495,15 @@ async function loadHistory() {
     const dose = state.history.find((x) => x.id === Number(it.dataset.id));
     if (dose) openDoseDialog(dose.medication_id, dose);
   }));
+  if (state.focusTemp) {
+    const target = el.querySelector(`.item[data-temp="${state.focusTemp}"]`);
+    state.focusTemp = null;
+    if (target) {
+      target.scrollIntoView({ block: "center" });
+      target.classList.add("flash");
+      setTimeout(() => target.classList.remove("flash"), 2500);
+    }
+  }
   el.querySelectorAll(".item[data-event]").forEach((it) => it.addEventListener("click", () => {
     const v = state.eventHistory.find((x) => x.id === Number(it.dataset.event));
     if (v) openEventDialog(v);

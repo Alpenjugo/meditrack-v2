@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.1
+- Übersicht: Antippen der letzten Temperatur öffnet den Verlauf und hebt die Messung hervor
+  (dort bearbeiten), statt direkt den Bearbeiten-Dialog.
+
 ## 1.4.0
 - Neu: **Ereignisse** erfassen (Erbrechen, Durchfall, Schnupfen/Husten, Affektkrampf, Arztbesuch,
   Zahnen, Stich/Verletzung, Notiz) – im Verlauf und als eigene Spur im Diagramm.
