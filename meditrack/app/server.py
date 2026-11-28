@@ -26,7 +26,7 @@ from ha import Publisher
 log = logging.getLogger("meditrack")
 STATIC = Path(__file__).parent / "static"
 INGRESS_IP = "172.30.32.2"
-MAX_BODY = 64 * 1024
+MAX_BODY = 4 * 1024 * 1024  # Import alter Notizen
 
 
 def load_options() -> dict:
@@ -223,6 +223,32 @@ def make_handler(app: App):
                 else:
                     result = (405, {"error": "Methode nicht erlaubt"})
 
+            elif res == "events":
+                if method == "GET" and rid is None:
+                    child_id = self._int(query.get("child_id"))
+                    limit = min(self._int(query.get("limit")) or 300, 5000)
+                    return self._send(200, store.list_events(child_id, limit=limit))
+                if method == "POST" and rid is None:
+                    changed = True
+                    result = (201, store.add_event(self._json_body()))
+                elif method == "PUT" and rid:
+                    ev = store.update_event(rid, self._json_body())
+                    changed = True
+                    result = (200, ev) if ev else (404, {"error": "Ereignis nicht gefunden"})
+                elif method == "DELETE" and rid:
+                    changed = True
+                    result = (204, None) if store.delete_event(rid) else (404, {"error": "Ereignis nicht gefunden"})
+                else:
+                    result = (405, {"error": "Methode nicht erlaubt"})
+
+            elif res == "import" and method == "POST":
+                body = self._json_body()
+                summary = store.import_data(self._int(body.get("child_id")), body.get("data"),
+                                            dry_run=bool(body.get("dry_run")))
+                if not summary["dry_run"]:
+                    changed = True
+                result = (200, summary)
+
             elif res == "chart" and method == "GET":
                 child_id = self._int(query.get("child_id"))
                 if not store.get_child(child_id):
@@ -263,6 +289,8 @@ def make_handler(app: App):
                               for d in store.list_doses(c["id"], limit=1_000_000)],
                     "temperatures": [t for c in store.list_children()
                                      for t in store.list_temperatures(c["id"], limit=1_000_000)],
+                    "events": [e for c in store.list_children()
+                               for e in store.list_events(c["id"], limit=1_000_000)],
                 }
                 return self._send(200, data, extra_headers={
                     "Content-Disposition": 'attachment; filename="meditrack-export.json"'})

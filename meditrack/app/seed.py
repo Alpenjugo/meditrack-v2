@@ -16,7 +16,7 @@ Felder:
 """
 
 # Bei neuen/geänderten Vorlagen erhöhen; neue Einträge mit "added_in" markieren.
-SEED_VERSION = 4
+SEED_VERSION = 5
 
 CHECK = "Werte vor Gebrauch mit Packungsbeilage bzw. Kinderarzt abgleichen."
 
@@ -175,6 +175,20 @@ PRESET_MEDICATIONS = [
                   "mind. 10 h Abstand). Granulat zur Zubereitung von 100 ml Suspension "
                   "(200 mg/4 ml = 50 mg/ml). Vor Gebrauch schütteln. Dosis und Dauer exakt gemäss "
                   "Rezept; Kur nicht vorzeitig abbrechen, auch wenn es dem Kind besser geht."),
+    },
+    {
+        "name": "Perenterol (Saccharomyces boulardii)",
+        "active_ingredient": "Saccharomyces boulardii",
+        "form": "Pulver/Kapsel", "route": "oral", "dose_unit": "Beutel",
+        "default_dose": 1, "min_interval_hours": 0, "added_in": 5,
+        "notes": f"Bei Durchfall bzw. begleitend zu Antibiotika. Dosierung gemäss Packungsbeilage. {CHECK}",
+    },
+    {
+        "name": "Viburcol Zäpfchen",
+        "active_ingredient": "Viburcol (homöopathisch)",
+        "form": "Zäpfchen", "route": "rektal", "dose_unit": "Stück",
+        "default_dose": 1, "min_interval_hours": 0, "added_in": 5,
+        "notes": f"Homöopathisches Arzneimittel (Unruhe, Zahnen). Anwendung gemäss Packungsbeilage. {CHECK}",
     },
     {
         "name": "Dexpanthenol Salbe (z. B. Bepanthen)",

@@ -18,6 +18,7 @@
       <div class="add-row">
         <button id="btnAddDose" class="btn primary big"><i data-icon="plus"></i>Gabe erfassen</button>
         <button id="btnAddTemp" class="btn big secondary"><i data-icon="thermo"></i>Temperatur</button>
+        <button id="btnAddEvent" class="btn big secondary"><i data-icon="note"></i>Ereignis</button>
       </div>
       <div id="lastTemp"></div>
       <div id="quickPicks" class="quick"></div>
@@ -69,7 +70,12 @@
       </div>
       <p class="muted small">Das Gewicht wird für den Dosisvorschlag und die Tageshöchstmenge (mg/kg) verwendet – bitte aktuell halten.</p>
       <div id="childList" class="list"></div>
-      <p><a href="api/export" class="btn ghost" download><i data-icon="download"></i>Daten exportieren (JSON)</a></p>
+      <div class="data-actions">
+        <a href="api/export" class="btn ghost" download><i data-icon="download"></i>Daten exportieren (JSON)</a>
+        <label class="btn ghost"><i data-icon="upload"></i>Daten importieren
+          <input type="file" id="importFile" accept=".json,application/json" hidden></label>
+      </div>
+      <p class="muted small">Import: MediTrack-Importdatei (JSON) für das oben ausgewählte Kind. Vor dem Speichern erscheint eine Vorschau.</p>
     </section>
   </main>
 
@@ -150,6 +156,43 @@
         <button type="button" class="btn danger" id="tempDelete" hidden>Löschen</button>
         <span class="spacer"></span>
         <button type="submit" class="btn primary wide">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Dialog: Ereignis -->
+  <dialog id="eventDialog" class="sheet">
+    <form id="eventForm" method="dialog" novalidate>
+      <div class="sheet-head">
+        <h3 id="eventDialogTitle">Ereignis erfassen</h3>
+        <button type="button" class="icon-btn" data-close aria-label="Schliessen"><i data-icon="x"></i></button>
+      </div>
+      <div class="sheet-body">
+        <label>Art</label>
+        <div class="seg kinds" id="eventKind" role="radiogroup"></div>
+        <div class="when" id="eventWhen"></div>
+        <label>Notiz <textarea id="eventNote" rows="3" maxlength="1000" placeholder="optional, z. B. «viel» oder Befund"></textarea></label>
+      </div>
+      <div class="sheet-actions">
+        <button type="button" class="btn danger" id="eventDelete" hidden>Löschen</button>
+        <span class="spacer"></span>
+        <button type="submit" class="btn primary wide">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Dialog: Import-Vorschau -->
+  <dialog id="importDialog" class="sheet">
+    <form method="dialog">
+      <div class="sheet-head">
+        <h3>Daten importieren</h3>
+        <button type="button" class="icon-btn" data-close aria-label="Schliessen"><i data-icon="x"></i></button>
+      </div>
+      <div class="sheet-body" id="importSummary"></div>
+      <div class="sheet-actions">
+        <button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn primary wide" id="importConfirm">Importieren</button>
       </div>
     </form>
   </dialog>

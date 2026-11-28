@@ -214,8 +214,8 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(names["Nasivin Kinder Spray 0.025 %"]["favorite"], 1)
         self.assertEqual(names["Dafalgan Zäpfchen 150 mg"]["favorite"], 1)
         Store(path)  # idempotent
-        # Ibuprofen (umbenannt), Algifor, Dafalgan, Nasivin, Amoxicillin Sandoz
-        self.assertEqual(len(st.list_medications()), 5)
+        # Ibuprofen (umbenannt), Algifor, Dafalgan, Nasivin, Amoxicillin Sandoz, Perenterol, Viburcol
+        self.assertEqual(len(st.list_medications()), 7)
         st.conn.close()
 
     def test_migration_from_seed_v2(self):
@@ -235,7 +235,8 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(names["Ibuprofen Suspension 20 mg/ml"]["favorite"], 0)
         self.assertNotIn("Algifor Junior Suspension 20 mg/ml", names)
         self.assertIn("Amoxicillin Sandoz Suspension 200 mg/4 ml", names)  # v4
-        self.assertEqual(len(names), 3)
+        self.assertIn("Perenterol (Saccharomyces boulardii)", names)  # v5
+        self.assertEqual(len(names), 5)
         st.conn.close()
 
     def test_temperatures(self):
@@ -262,6 +263,62 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(self.store.delete_temperature(t2["id"]))
         self.store.delete_child(cid)  # Kaskade
         self.assertEqual(self.store.list_temperatures(cid), [])
+
+    def test_events(self):
+        cid = self.child["id"]
+        e = self.store.add_event({"child_id": cid, "kind": "Erbrechen", "note": "viel"})
+        self.assertEqual(e["kind"], "Erbrechen")
+        with self.assertRaises(ValidationError):
+            self.store.add_event({"child_id": cid, "kind": "Unbekannt"})
+        with self.assertRaises(ValidationError):
+            self.store.add_event({"child_id": cid, "kind": "Notiz",
+                                  "occurred_at": to_iso(utcnow() + timedelta(hours=2))})
+        upd = self.store.update_event(e["id"], {"kind": "Durchfall", "occurred_at": e["occurred_at"]})
+        self.assertEqual(upd["kind"], "Durchfall")
+        chart = self.store.chart(cid, utcnow() - timedelta(hours=1), utcnow() + timedelta(minutes=1))
+        self.assertEqual(len(chart["events"]), 1)
+        self.assertTrue(self.store.delete_event(e["id"]))
+
+    def test_import(self):
+        cid = self.child["id"]
+        t0 = utcnow() - timedelta(days=10)
+        iso = lambda h: to_iso(t0 + timedelta(hours=h))
+        data = {
+            "format": "meditrack-import", "child": "Lena",
+            "medications": [{"name": "Testmittel", "active_ingredient": "Test", "dose_unit": "Stück",
+                             "min_interval_hours": 0}],
+            "doses": [
+                {"at": iso(0), "medication": self.ibu["name"], "amount": 4},
+                {"at": iso(1), "medication": self.ibu["name"], "amount": 4},  # zu früh -> trotzdem import
+                {"at": iso(2), "medication": "Testmittel", "amount": 1, "note": "neu"},
+            ],
+            "temperatures": [{"at": iso(0), "celsius": 39.5}],
+            "events": [{"at": iso(3), "kind": "Erbrechen", "note": "viel"}],
+        }
+        dry = self.store.import_data(cid, data, dry_run=True)
+        self.assertEqual(dry["doses"]["new"], 3)
+        self.assertEqual(dry["new_medications"], ["Testmittel"])
+        self.assertEqual(self.store.list_doses(cid), [])  # Vorschau speichert nichts
+        self.assertFalse(any(m["name"] == "Testmittel" for m in self.store.list_medications()))
+        res = self.store.import_data(cid, data)
+        self.assertEqual((res["doses"]["new"], res["temperatures"]["new"], res["events"]["new"]), (3, 1, 1))
+        self.assertEqual(len(self.store.list_doses(cid)), 3)
+        self.assertEqual(self.store.list_doses(cid)[-1]["mg"], 80)  # 4 ml * 20 mg
+        again = self.store.import_data(cid, data)  # keine Duplikate
+        self.assertEqual((again["doses"]["new"], again["doses"]["skipped"]), (0, 3))
+        self.assertEqual(again["events"]["skipped"], 1)
+        # Fehler in einer Zeile -> nichts gespeichert
+        bad = {**data, "doses": [{"at": iso(5), "medication": self.ibu["name"], "amount": 4},
+                                 {"at": iso(6), "medication": self.ibu["name"], "amount": 0}]}
+        with self.assertRaises(ValidationError):
+            self.store.import_data(cid, bad)
+        self.assertEqual(len(self.store.list_doses(cid)), 3)
+        with self.assertRaises(ValidationError):
+            self.store.import_data(cid, {**data, "doses": [{"at": iso(7), "medication": "Gibtsnicht", "amount": 1}]})
+        with self.assertRaises(ValidationError):
+            self.store.import_data(cid, {"format": "anders"})
+        # Store bleibt nach Fehlern benutzbar (keine offene Transaktion)
+        self.assertTrue(self.store.add_event({"child_id": cid, "kind": "Notiz"}))
 
     def test_slugify(self):
         self.assertEqual(slugify("Jürg Müller"), "juerg_mueller")
@@ -347,6 +404,18 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(len(exp["temperatures"]), 1)
         self.assertEqual(self.req("DELETE", f"api/temperatures/{temp['id']}")[0], 204)
+        status, ev = self.req("POST", "api/events", {"child_id": child["id"], "kind": "Erbrechen", "note": "viel"})
+        self.assertEqual(status, 201)
+        self.assertEqual(self.req("GET", f"api/events?child_id={child['id']}")[1][0]["note"], "viel")
+        self.assertEqual(self.req("POST", "api/events", {"child_id": child["id"], "kind": "x"})[0], 400)
+        imp = {"format": "meditrack-import", "doses": [],
+               "temperatures": [{"at": "2026-01-27T17:00:00Z", "celsius": 39.5}], "events": []}
+        status, res = self.req("POST", "api/import", {"child_id": child["id"], "data": imp, "dry_run": True})
+        self.assertEqual((status, res["temperatures"]["new"], res["dry_run"]), (200, 1, True))
+        status, res = self.req("POST", "api/import", {"child_id": child["id"], "data": imp})
+        self.assertEqual((status, res["temperatures"]["new"]), (200, 1))
+        self.assertEqual(self.req("POST", "api/import", {"child_id": child["id"], "data": {"x": 1}})[0], 400)
+        self.assertEqual(self.req("DELETE", f"api/events/{ev['id']}")[0], 204)
 
     def test_ingress_only_blocks_other_ips(self):
         self.app.ingress_only = True

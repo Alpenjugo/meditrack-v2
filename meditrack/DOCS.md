@@ -20,7 +20,11 @@ Erfasse, wann du deinem Kind welches Medikament gegeben hast – mit Sperrzeit
 8. **Diagramm** → Temperaturkurve mit den Gaben darunter (eine Spur pro Wirkstoff).
    Zeitraum: 24 h, 3 Tage, 7 Tage, 30 Tage oder eigenes Von–Bis-Datum. Punkt antippen
    zeigt Details. Gestrichelte Linie = Fiebergrenze 38.0 °C.
-9. **Medikamente** → Vorlagen anpassen oder eigene hinzufügen.
+9. **Ereignis** → z. B. Erbrechen, Durchfall, Affektkrampf, Arztbesuch, Zahnen oder eine Notiz
+   mit Zeitpunkt festhalten. Erscheint im Verlauf und im Diagramm.
+10. **Medikamente** → Vorlagen anpassen oder eigene hinzufügen.
+11. **Daten importieren** (Kinder) → MediTrack-Importdatei (JSON) für das ausgewählte Kind.
+    Vor dem Speichern erscheint eine Vorschau; doppelte Einträge werden übersprungen.
 
 ## Felder eines Medikaments
 | Feld | Bedeutung |

@@ -66,6 +66,17 @@ CREATE TABLE IF NOT EXISTS temperatures (
 
 CREATE INDEX IF NOT EXISTS idx_temps_child_time ON temperatures(child_id, measured_at);
 
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    child_id INTEGER NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+    occurred_at TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_child_time ON events(child_id, occurred_at);
+
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -87,6 +98,8 @@ NUMERIC_MED_FIELDS = {
 TEMP_METHODS = ["Ohr", "Stirn", "rektal", "Achsel", "Mund"]
 TEMP_MIN, TEMP_MAX = 34.0, 43.0
 FEVER_C = 38.0
+EVENT_KINDS = ["Erbrechen", "Durchfall", "Schnupfen/Husten", "Affektkrampf", "Arztbesuch",
+               "Zahnen", "Stich/Verletzung", "Notiz"]
 
 
 class ValidationError(ValueError):
@@ -514,6 +527,183 @@ class Store:
             cur = self.conn.execute("DELETE FROM temperatures WHERE id=?", (temp_id,))
         return cur.rowcount > 0
 
+    # --------------------------------------------------------------- events
+    def list_events(self, child_id, limit=500, since=None, until=None):
+        sql = "SELECT * FROM events WHERE child_id=?"
+        params = [child_id]
+        if since:
+            sql += " AND occurred_at >= ?"
+            params.append(to_iso(since))
+        if until:
+            sql += " AND occurred_at <= ?"
+            params.append(to_iso(until))
+        sql += " ORDER BY occurred_at DESC LIMIT ?"
+        params.append(int(limit))
+        with self.lock:
+            rows = self.conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_event(self, event_id):
+        with self.lock:
+            row = self.conn.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
+        return dict(row) if row else None
+
+    def _clean_event(self, data):
+        kind = _text(data.get("kind"), "Art", required=True, max_len=40)
+        if kind not in EVENT_KINDS:
+            raise ValidationError("Unbekannte Art des Ereignisses")
+        occurred_at = parse_iso(data["occurred_at"]) if data.get("occurred_at") else utcnow()
+        if occurred_at > utcnow() + timedelta(minutes=5):
+            raise ValidationError("Zeitpunkt liegt in der Zukunft")
+        return {"kind": kind, "occurred_at": to_iso(occurred_at),
+                "note": _text(data.get("note"), "Notiz", max_len=1000)}
+
+    def _child_id(self, data):
+        try:
+            child_id = int(data.get("child_id"))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("Kind ist erforderlich") from exc
+        if not self.get_child(child_id):
+            raise ValidationError("Kind nicht gefunden")
+        return child_id
+
+    def add_event(self, data):
+        child_id = self._child_id(data)
+        e = self._clean_event(data)
+        with self.lock, self.conn:
+            cur = self.conn.execute(
+                "INSERT INTO events(child_id, occurred_at, kind, note, created_at) VALUES(?,?,?,?,?)",
+                (child_id, e["occurred_at"], e["kind"], e["note"], to_iso(utcnow())))
+        return self.get_event(cur.lastrowid)
+
+    def update_event(self, event_id, data):
+        if not self.get_event(event_id):
+            return None
+        e = self._clean_event(data)
+        with self.lock, self.conn:
+            self.conn.execute("UPDATE events SET occurred_at=?, kind=?, note=? WHERE id=?",
+                              (e["occurred_at"], e["kind"], e["note"], event_id))
+        return self.get_event(event_id)
+
+    def delete_event(self, event_id):
+        with self.lock, self.conn:
+            cur = self.conn.execute("DELETE FROM events WHERE id=?", (event_id,))
+        return cur.rowcount > 0
+
+    # --------------------------------------------------------------- import
+    def import_data(self, child_id, data, dry_run=False):
+        """Importiert Gaben, Temperaturen und Ereignisse (z. B. aus alten Notizen).
+
+        Zeitpunkte müssen als ISO-Zeitpunkt mit Zeitzone kommen (das Frontend
+        rechnet die lokale Zeit um). Sperrzeit-Warnungen werden bewusst nicht
+        angewendet: die Gaben sind bereits erfolgt. Bereits vorhandene Einträge
+        (gleicher Zeitpunkt, gleiches Medikament bzw. gleicher Wert) werden
+        übersprungen, ein erneuter Import erzeugt also keine Duplikate.
+        Alles oder nichts: bei einem Fehler wird nichts gespeichert.
+        """
+        if not self.get_child(child_id):
+            raise ValidationError("Kind nicht gefunden")
+        if not isinstance(data, dict) or data.get("format") != "meditrack-import":
+            raise ValidationError("Keine MediTrack-Importdatei")
+        doses = data.get("doses") or []
+        temps = data.get("temperatures") or []
+        events = data.get("events") or []
+        med_defs = {m.get("name"): m for m in (data.get("medications") or []) if isinstance(m, dict)}
+        if not all(isinstance(x, list) for x in (doses, temps, events)):
+            raise ValidationError("Ungültiges Dateiformat")
+        if len(doses) + len(temps) + len(events) > 20000:
+            raise ValidationError("Zu viele Einträge")
+
+        with self.lock:
+            existing = {r["name"]: dict(r) for r in self.conn.execute("SELECT * FROM medications")}
+        needed = sorted({d.get("medication") for d in doses})
+        missing = [n for n in needed if n not in existing and n not in med_defs]
+        if missing:
+            raise ValidationError("Unbekannte Medikamente: " + ", ".join(map(str, missing)))
+        new_meds = [n for n in needed if n not in existing]
+        summary = {"new_medications": new_meds,
+                   "doses": {"new": 0, "skipped": 0},
+                   "temperatures": {"new": 0, "skipped": 0},
+                   "events": {"new": 0, "skipped": 0}}
+
+        def row_error(kind, i, exc):
+            return ValidationError(f"{kind} Nr. {i + 1}: {exc}")
+
+        with self.lock:
+            try:
+                self.conn.execute("BEGIN")
+                for name in new_meds:
+                    mid = self._insert_med(med_defs[name])
+                    existing[name] = dict(self.conn.execute(
+                        "SELECT * FROM medications WHERE id=?", (mid,)).fetchone())
+                for i, d in enumerate(doses):
+                    try:
+                        med = existing[d.get("medication")]
+                        amount = _num(d.get("amount"), "Menge", allow_none=False)
+                        if amount <= 0:
+                            raise ValidationError("Menge muss grösser als 0 sein")
+                        at = to_iso(parse_iso(d.get("at")))
+                        if parse_iso(at) > utcnow() + timedelta(minutes=5):
+                            raise ValidationError("Zeitpunkt liegt in der Zukunft")
+                        note = _text(d.get("note"), "Notiz", max_len=500)
+                    except ValidationError as exc:
+                        raise row_error("Gabe", i, exc) from exc
+                    dup = self.conn.execute(
+                        "SELECT 1 FROM doses WHERE child_id=? AND medication_id=? AND given_at=?",
+                        (child_id, med["id"], at)).fetchone()
+                    if dup:
+                        summary["doses"]["skipped"] += 1
+                        continue
+                    mg = amount * med["mg_per_unit"] if med.get("mg_per_unit") else None
+                    self.conn.execute(
+                        "INSERT INTO doses(child_id, medication_id, given_at, amount, unit, mg, note, "
+                        "created_at) VALUES(?,?,?,?,?,?,?,?)",
+                        (child_id, med["id"], at, amount, med["dose_unit"], mg, note, to_iso(utcnow())))
+                    summary["doses"]["new"] += 1
+                for i, t in enumerate(temps):
+                    try:
+                        c = self._clean_temp({"celsius": t.get("celsius"), "measured_at": t.get("at"),
+                                              "method": t.get("method"), "note": t.get("note")})
+                    except ValidationError as exc:
+                        raise row_error("Temperatur", i, exc) from exc
+                    dup = self.conn.execute(
+                        "SELECT 1 FROM temperatures WHERE child_id=? AND measured_at=? AND celsius=?",
+                        (child_id, c["measured_at"], c["celsius"])).fetchone()
+                    if dup:
+                        summary["temperatures"]["skipped"] += 1
+                        continue
+                    self.conn.execute(
+                        "INSERT INTO temperatures(child_id, measured_at, celsius, method, note, created_at) "
+                        "VALUES(?,?,?,?,?,?)",
+                        (child_id, c["measured_at"], c["celsius"], c["method"], c["note"], to_iso(utcnow())))
+                    summary["temperatures"]["new"] += 1
+                for i, e in enumerate(events):
+                    try:
+                        c = self._clean_event({"kind": e.get("kind"), "occurred_at": e.get("at"),
+                                               "note": e.get("note")})
+                    except ValidationError as exc:
+                        raise row_error("Ereignis", i, exc) from exc
+                    dup = self.conn.execute(
+                        "SELECT 1 FROM events WHERE child_id=? AND occurred_at=? AND kind=? "
+                        "AND COALESCE(note,'')=?",
+                        (child_id, c["occurred_at"], c["kind"], c["note"] or "")).fetchone()
+                    if dup:
+                        summary["events"]["skipped"] += 1
+                        continue
+                    self.conn.execute(
+                        "INSERT INTO events(child_id, occurred_at, kind, note, created_at) VALUES(?,?,?,?,?)",
+                        (child_id, c["occurred_at"], c["kind"], c["note"], to_iso(utcnow())))
+                    summary["events"]["new"] += 1
+                if dry_run:
+                    self.conn.execute("ROLLBACK")
+                else:
+                    self.conn.execute("COMMIT")
+            except Exception:
+                self.conn.execute("ROLLBACK")
+                raise
+        summary["dry_run"] = bool(dry_run)
+        return summary
+
     def chart(self, child_id, start: datetime, end: datetime):
         """Temperaturen und Gaben in einem Zeitraum (aufsteigend) für das Diagramm."""
         if end <= start:
@@ -531,6 +721,7 @@ class Store:
         return {
             "from": to_iso(start), "to": to_iso(end), "fever_c": FEVER_C,
             "temperatures": temps[::-1],
+            "events": self.list_events(child_id, limit=100_000, since=start, until=end)[::-1],
             "doses": [dict(r) for r in rows],
         }
 

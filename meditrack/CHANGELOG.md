@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0
+- Neu: **Ereignisse** erfassen (Erbrechen, Durchfall, Schnupfen/Husten, Affektkrampf, Arztbesuch,
+  Zahnen, Stich/Verletzung, Notiz) – im Verlauf und als eigene Spur im Diagramm.
+- Neu: **Daten importieren** (Kinder → Daten importieren) mit Vorschau. Sperrzeit-Warnungen werden
+  beim Import nicht angewendet, bereits vorhandene Einträge werden übersprungen, bei Fehlern wird nichts gespeichert.
+- Neue Vorlagen: Perenterol (Saccharomyces boulardii), Viburcol Zäpfchen.
+- Diagramm-Tooltip zeigt gleichzeitige Einträge gemeinsam. Ereignisse sind im JSON-Export enthalten.
+
 ## 1.3.1
 - Behoben: Normale Home-Assistant-Benutzer (ohne Adminrechte) erhielten «401 Unauthorized».
   Das Add-on-Panel ist jetzt für alle angemeldeten Benutzer freigegeben (`panel_admin: false`).

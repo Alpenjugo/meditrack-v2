@@ -113,7 +113,9 @@ h2 { font-size: 1.3rem; margin: 4px 0 14px; }
   display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 
 /* Übersicht */
-.add-row { display: grid; grid-template-columns: 3fr 2fr; gap: 10px; margin-bottom: 12px; }
+.add-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.add-row #btnAddDose { grid-column: 1 / -1; }
+.add-row .btn.secondary { min-height: 48px; font-size: 1rem; }
 .temp-line { display: flex; align-items: center; gap: 12px; width: 100%; background: var(--card); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 12px 16px; margin-bottom: 16px; cursor: pointer; font: inherit; color: inherit; text-align: left; }
 .temp-line .ico { color: var(--temp); width: 24px; height: 24px; }
@@ -292,3 +294,12 @@ nav.bottom button.active { color: var(--primary); font-weight: 600; }
 .chart-summary .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .85rem; }
 .chart-summary .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
 .chart-summary .sw.line { width: 16px; height: 3px; border-radius: 2px; vertical-align: 3px; }
+
+/* Ereignisse & Import */
+.seg.kinds button { flex: 1 0 40%; }
+.item.event .lead { color: var(--text); }
+.chart-box .event-mark { fill: var(--text); stroke: var(--card); stroke-width: 2; }
+.chart-summary .sw.diamond { border-radius: 1px; transform: rotate(45deg); background: var(--text); width: 9px; height: 9px; }
+.data-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+#importSummary ul { padding-left: 20px; }
+.chart-tip hr { border: 0; border-top: 1px solid currentColor; opacity: .25; margin: 5px 0; }

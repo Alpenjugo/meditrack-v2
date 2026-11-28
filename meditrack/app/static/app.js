@@ -15,10 +15,15 @@ const state = {
   recent: [],
   history: [],
   tempHistory: [],
+  eventHistory: [],
+  editingEvent: null,
+  pendingImport: null,
   chartHours: 72,
   chart: null,
 };
 const FEVER = 38.0;
+const EVENT_KINDS = ["Erbrechen", "Durchfall", "Schnupfen/Husten", "Affektkrampf", "Arztbesuch",
+  "Zahnen", "Stich/Verletzung", "Notiz"];
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
@@ -43,6 +48,8 @@ const ICON_PATHS = {
   alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/>',
   chevron: '<path d="m9 6 6 6-6 6"/>',
   download: '<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
+  upload: '<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>',
+  note: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
 };
 function icon(name, cls = "") {
   return `<svg class="ico ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICON_PATHS[name] || ""}</svg>`;
@@ -377,6 +384,7 @@ function renderStatus() {
   const el = $("#statusList");
   $("#btnAddDose").disabled = !state.childId;
   $("#btnAddTemp").disabled = !state.childId;
+  $("#btnAddEvent").disabled = !state.childId;
   renderLastTemp();
   if (!state.childId) {
     el.innerHTML = `<div class="empty">Erfasse zuerst ein Kind.<br><br>
@@ -424,23 +432,39 @@ function renderStatus() {
 async function loadHistory() {
   const el = $("#historyList");
   if (!state.childId) { el.innerHTML = `<div class="empty">Kein Kind ausgewählt.</div>`; return; }
-  let doses, temps;
+  let doses, temps, events;
   try {
-    [doses, temps] = await Promise.all([
-      api(`doses?child_id=${state.childId}&limit=300`), api(`temperatures?child_id=${state.childId}&limit=300`)]);
+    [doses, temps, events] = await Promise.all([
+      api(`doses?child_id=${state.childId}&limit=500`), api(`temperatures?child_id=${state.childId}&limit=500`),
+      api(`events?child_id=${state.childId}&limit=500`)]);
   } catch (e) { toast(e.message); return; }
   state.history = doses;
   state.tempHistory = temps;
+  state.eventHistory = events;
   const entries = [
     ...doses.map((d) => ({ kind: "dose", at: d.given_at, d })),
     ...temps.map((t) => ({ kind: "temp", at: t.measured_at, t })),
+    ...events.map((v) => ({ kind: "event", at: v.occurred_at, v })),
   ].sort((a, b) => (a.at < b.at ? 1 : -1));
-  if (!entries.length) { el.innerHTML = `<div class="empty">Noch keine Gaben oder Messungen erfasst.</div>`; return; }
+  if (!entries.length) { el.innerHTML = `<div class="empty">Noch keine Gaben, Messungen oder Ereignisse erfasst.</div>`; return; }
   let html = "", lastDay = "";
   for (const e of entries) {
     const dt = new Date(e.at);
     const day = `${WD_LONG[dt.getDay()]}, ${fmtDate(dt)}`;
     if (day !== lastDay) { html += `<div class="day">${esc(day)}</div>`; lastDay = day; }
+    if (e.kind === "event") {
+      const v = e.v;
+      html += `
+      <div class="item clickable event" data-event="${v.id}">
+        <div class="lead">${icon("note")}</div>
+        <div class="main">
+          <div class="title"><span class="time">${fmtHM(dt)}</span> · ${esc(v.kind)}</div>
+          ${v.note ? `<div class="sub">${esc(v.note)}</div>` : ""}
+        </div>
+        <span class="chev">${icon("chevron")}</span>
+      </div>`;
+      continue;
+    }
     if (e.kind === "temp") {
       const t = e.t;
       html += `
@@ -469,6 +493,10 @@ async function loadHistory() {
   el.querySelectorAll(".item[data-id]").forEach((it) => it.addEventListener("click", () => {
     const dose = state.history.find((x) => x.id === Number(it.dataset.id));
     if (dose) openDoseDialog(dose.medication_id, dose);
+  }));
+  el.querySelectorAll(".item[data-event]").forEach((it) => it.addEventListener("click", () => {
+    const v = state.eventHistory.find((x) => x.id === Number(it.dataset.event));
+    if (v) openEventDialog(v);
   }));
   el.querySelectorAll(".item[data-temp]").forEach((it) => it.addEventListener("click", () => {
     const t = state.tempHistory.find((x) => x.id === Number(it.dataset.temp));
@@ -536,6 +564,102 @@ async function deleteTemp() {
   } catch (e) { toast(e.message); }
 }
 
+/* ---------- Ereignisse ---------- */
+function setEventKind(v) {
+  document.querySelectorAll("#eventKind button").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
+}
+
+function openEventDialog(ev = null) {
+  if (!state.childId) return;
+  state.editingEvent = ev;
+  $("#eventForm").reset();
+  $("#eventDialogTitle").textContent = ev ? "Ereignis bearbeiten" : "Ereignis erfassen";
+  $("#eventDelete").hidden = !ev;
+  setEventKind(ev ? ev.kind : "");
+  setWhen($("#eventWhen"), ev ? new Date(ev.occurred_at) : new Date());
+  $("#eventNote").value = ev?.note || "";
+  $("#eventDialog").showModal();
+}
+
+async function saveEvent(evt) {
+  evt.preventDefault();
+  const kind = $("#eventKind button.active")?.dataset.v;
+  if (!kind) { toast("Bitte Art wählen"); return; }
+  const time = readWhen($("#eventWhen"));
+  if (!time) { toast("Uhrzeit bitte als HH:MM eingeben"); return; }
+  const body = { child_id: state.childId, kind, occurred_at: time.toISOString(), note: $("#eventNote").value };
+  try {
+    if (state.editingEvent) await api(`events/${state.editingEvent.id}`, { method: "PUT", body });
+    else await api("events", { method: "POST", body });
+    $("#eventDialog").close();
+    toast("Ereignis gespeichert");
+    refreshViews();
+  } catch (e) { toast(e.message); }
+}
+
+async function deleteEvent() {
+  const v = state.editingEvent;
+  if (!v || !confirm("Dieses Ereignis löschen?")) return;
+  try {
+    await api(`events/${v.id}`, { method: "DELETE" });
+    $("#eventDialog").close();
+    toast("Gelöscht");
+    refreshViews();
+  } catch (e) { toast(e.message); }
+}
+
+/* ---------- Import (z. B. aus alten Notizen) ---------- */
+// "2026-01-27T18:00" = lokale Zeit dieses Geräts -> ISO (UTC); Zeitpunkte mit Zone bleiben unverändert
+function localToIso(at) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})$/.exec(String(at || "").trim());
+  if (!m) return at;
+  return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).toISOString();
+}
+
+async function onImportFile(ev) {
+  const file = ev.target.files[0];
+  ev.target.value = "";
+  if (!file) return;
+  const child = currentChild();
+  if (!child) { toast("Bitte zuerst ein Kind auswählen"); return; }
+  let data;
+  try { data = JSON.parse(await file.text()); } catch (_) { toast("Datei ist kein gültiges JSON"); return; }
+  if (data.format !== "meditrack-import") { toast("Keine MediTrack-Importdatei"); return; }
+  const conv = (list) => (list || []).map((x) => ({ ...x, at: localToIso(x.at) }));
+  data = { ...data, doses: conv(data.doses), temperatures: conv(data.temperatures), events: conv(data.events) };
+  try {
+    const s = await api("import", { method: "POST", body: { child_id: child.id, data, dry_run: true } });
+    state.pendingImport = data;
+    const other = data.child && data.child.trim().toLowerCase() !== child.name.trim().toLowerCase();
+    $("#importSummary").innerHTML = `
+      ${other ? `<div class="warnings">${icon("alert", "sm")} Die Datei ist für «${esc(data.child)}», ausgewählt ist «${esc(child.name)}».</div>` : ""}
+      <p>Import für <b>${esc(child.name)}</b>${data.title ? ` aus «${esc(data.title)}»` : ""}:</p>
+      <ul>
+        <li>${s.doses.new} Gaben${s.doses.skipped ? ` (${s.doses.skipped} bereits vorhanden)` : ""}</li>
+        <li>${s.temperatures.new} Temperaturen${s.temperatures.skipped ? ` (${s.temperatures.skipped} bereits vorhanden)` : ""}</li>
+        <li>${s.events.new} Ereignisse${s.events.skipped ? ` (${s.events.skipped} bereits vorhanden)` : ""}</li>
+      </ul>
+      ${s.new_medications.length ? `<p>Neue Medikamente: ${s.new_medications.map(esc).join(", ")}</p>` : ""}
+      <p class="muted small">Sperrzeit-Warnungen werden beim Import nicht geprüft. Bereits vorhandene Einträge werden übersprungen.</p>`;
+    $("#importConfirm").disabled = !(s.doses.new + s.temperatures.new + s.events.new);
+    $("#importDialog").showModal();
+  } catch (e) { toast(e.message); }
+}
+
+async function confirmImport() {
+  const child = currentChild();
+  if (!state.pendingImport || !child) return;
+  $("#importConfirm").disabled = true;
+  try {
+    const s = await api("import", { method: "POST", body: { child_id: child.id, data: state.pendingImport } });
+    $("#importDialog").close();
+    state.pendingImport = null;
+    await loadMeds();
+    toast(`Importiert: ${s.doses.new} Gaben, ${s.temperatures.new} Temperaturen, ${s.events.new} Ereignisse`);
+    refreshViews();
+  } catch (e) { toast(e.message); $("#importConfirm").disabled = false; }
+}
+
 /* ---------- Diagramm ---------- */
 function chartRange() {
   if (state.chartHours === "custom") {
@@ -594,7 +718,8 @@ function renderChart() {
   const from = new Date(c.from).getTime(), to = new Date(c.to).getTime();
   const temps = c.temperatures.map((t) => ({ ...t, x: new Date(t.measured_at).getTime() }));
   const doses = c.doses.map((d) => ({ ...d, x: new Date(d.given_at).getTime() }));
-  if (!temps.length && !doses.length) {
+  const events = (c.events || []).map((e) => ({ ...e, x: new Date(e.occurred_at).getTime() }));
+  if (!temps.length && !doses.length && !events.length) {
     box.innerHTML = `<div class="empty">Keine Messungen oder Gaben in diesem Zeitraum.</div>`;
     $("#chartSummary").innerHTML = "";
     return;
@@ -604,7 +729,8 @@ function renderChart() {
   const padL = 40, padR = 12, padT = 12;
   const plotH = Math.round(Math.min(260, Math.max(180, W * 0.5)));
   const laneH = 36, axisH = 30;
-  const H = padT + plotH + axisH + lanes.length * laneH + (lanes.length ? 6 : 0);
+  const nLanes = lanes.length + (events.length ? 1 : 0);
+  const H = padT + plotH + axisH + nLanes * laneH + (nLanes ? 6 : 0);
   const plotW = W - padL - padR;
   const xs = (t) => padL + ((t - from) / (to - from)) * plotW;
 
@@ -669,6 +795,15 @@ function renderChart() {
       svg += `<circle cx="${x}" cy="${y}" r="5" fill="${col}" stroke="var(--card)" stroke-width="2" data-d="${di}"/>`;
     });
   });
+  if (events.length) {
+    const top = axisY + axisH + lanes.length * laneH, y = top + 24;
+    svg += `<text class="lane-label" x="${padL + 2}" y="${top + 10}">Ereignisse</text>`;
+    svg += `<line class="grid" x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}"/>`;
+    events.forEach((e) => {
+      const x = xs(e.x);
+      svg += `<path class="event-mark" d="M${x},${y - 6} L${x + 6},${y} L${x},${y + 6} L${x - 6},${y} Z"/>`;
+    });
+  }
   svg += `<line class="cross" id="chartCross" x1="0" x2="0" y1="${padT}" y2="${bottom}" visibility="hidden"/>`;
   svg += `<rect id="chartHit" x="${padL}" y="0" width="${plotW}" height="${H}" fill="transparent"/>`;
   svg += `</svg>`;
@@ -679,6 +814,7 @@ function renderChart() {
   const tip = $("#chartTip"), cross = svgEl.querySelector("#chartCross");
   const points = [
     ...temps.map((t) => ({ x: xs(t.x), y: ys(t.celsius), html: `<b>${fmtNum(t.celsius)} °C</b>${t.method ? " · " + esc(t.method) : ""}<br>${esc(fmtTime(t.measured_at))}${t.note ? "<br>" + esc(t.note) : ""}` })),
+    ...events.map((e) => ({ x: xs(e.x), y: null, html: `<b>${esc(e.kind)}</b>${e.note ? "<br>" + esc(e.note) : ""}<br>${esc(fmtTime(e.occurred_at))}` })),
     ...doses.map((d) => ({ x: xs(d.x), y: null, html: `<b>${esc(d.medication_name)}</b><br>${fmtNum(d.amount)} ${esc(d.unit)}${d.mg != null ? ` (${fmtNum(d.mg)} mg)` : ""}<br>${esc(fmtTime(d.given_at))}` })),
   ];
   const show = (ev) => {
@@ -688,7 +824,9 @@ function renderChart() {
     points.forEach((p) => { const dist = Math.abs(p.x - px); if (dist < bd) { bd = dist; best = p; } });
     if (!best || bd > 24) { hide(); return; }
     cross.setAttribute("x1", best.x); cross.setAttribute("x2", best.x); cross.setAttribute("visibility", "visible");
-    tip.innerHTML = best.html;
+    // alle Einträge am selben Zeitpunkt gemeinsam anzeigen
+    const same = points.filter((q) => Math.abs(q.x - best.x) < 1.5);
+    tip.innerHTML = same.slice(0, 6).map((q) => q.html).join("<hr>") + (same.length > 6 ? `<br>… +${same.length - 6}` : "");
     tip.hidden = false;
     const tx = rect.left + (best.x / W) * rect.width;
     const tw = tip.offsetWidth;
@@ -712,6 +850,7 @@ function renderChart() {
   const legend = [];
   if (temps.length) legend.push(`<span><span class="sw line" style="background:var(--temp)"></span>Temperatur</span>`);
   lanes.forEach((ing) => legend.push(`<span><span class="sw" style="background:${ingredientColor(ing)}"></span>${esc(ing)}: ${counts[ing]}×</span>`));
+  if (events.length) legend.push(`<span><span class="sw diamond"></span>Ereignisse: ${events.length}×</span>`);
   parts.push(`<div class="legend">${legend.join("")}</div>`);
   parts.push(`<p class="muted small">Tippe auf einen Punkt für Details. Fiebergrenze rektal/Ohr 38.0 °C; unter der Achsel gemessen liegt der Wert meist etwas tiefer.</p>`);
   $("#chartSummary").innerHTML = parts.join("");
@@ -972,6 +1111,14 @@ function bind() {
   document.querySelectorAll("dialog").forEach((d) => d.addEventListener("click", (e) => { if (e.target === d) d.close(); }));
   $("#btnAddDose").addEventListener("click", () => openDoseDialog());
   $("#btnAddTemp").addEventListener("click", () => openTempDialog());
+  $("#btnAddEvent").addEventListener("click", () => openEventDialog());
+  $("#eventKind").innerHTML = EVENT_KINDS.map((k) => `<button type="button" data-v="${k}">${k}</button>`).join("");
+  document.querySelectorAll("#eventKind button").forEach((b) => b.addEventListener("click", () => setEventKind(b.dataset.v)));
+  buildWhen($("#eventWhen"), { quarter: false });
+  $("#eventForm").addEventListener("submit", saveEvent);
+  $("#eventDelete").addEventListener("click", deleteEvent);
+  $("#importFile").addEventListener("change", onImportFile);
+  $("#importConfirm").addEventListener("click", confirmImport);
   $("#btnAddMed").addEventListener("click", () => openMedDialog());
   $("#btnAddChild").addEventListener("click", () => openChildDialog());
   $("#medSearch").addEventListener("input", renderMedList);
